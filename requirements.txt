@@ -1,0 +1,8 @@
+selenium
+webdriver-manager
+pyperclip
+flask
+line-bot-sdk
+gspread
+anthropic
+requests
