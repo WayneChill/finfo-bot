@@ -71,3 +71,11 @@ def get_pending_tasks() -> list:
             "SELECT * FROM tasks WHERE 狀態 = ?", (STATUS_PENDING,)
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_approved_tasks() -> list:
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM tasks WHERE 狀態 = ?", (STATUS_APPROVED,)
+        ).fetchall()
+    return [dict(r) for r in rows]

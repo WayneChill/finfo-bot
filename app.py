@@ -84,6 +84,17 @@ def create_task():
     return jsonify({"task_id": task_id}), 201
 
 
+@app.route("/tasks/approved", methods=["GET"])
+def get_approved_tasks():
+    return jsonify(sheets.get_approved_tasks())
+
+
+@app.route("/tasks/<task_id>/done", methods=["POST"])
+def mark_task_done(task_id):
+    sheets.update_status(task_id, sheets.STATUS_DONE)
+    return jsonify({"ok": True})
+
+
 @app.route("/line/webhook", methods=['POST'])
 def webhook():
     signature = request.headers['X-Line-Signature']

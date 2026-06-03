@@ -14,7 +14,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 import requests as http
-import sheets
 import claude_helper
 import editor
 import app
@@ -124,17 +123,17 @@ def get_post_content(driver, post_url: str) -> str:
 
 
 def process_edit_queue(driver):
-    """處理 LINE 確認後的編輯 queue"""
-    queue = app.get_edit_queue()
-    if not queue:
+    """向 Railway 取得已確認任務並執行編輯"""
+    try:
+        resp = http.get(f"{RAILWAY_API}/tasks/approved", timeout=10)
+        resp.raise_for_status()
+        tasks = resp.json()
+    except Exception as e:
+        print(f"⚠️ 無法取得已確認任務：{e}")
         return
-    
-    for task_id in list(queue):
-        task = sheets.get_task(task_id)
-        if not task:
-            app.clear_edit_task(task_id)
-            continue
-        
+
+    for task in tasks:
+        task_id = task["ID"]
         print(f"✏️ 執行編輯任務：{task_id}")
         success = editor.edit_comment(
             driver=driver,
@@ -142,14 +141,12 @@ def process_edit_queue(driver):
             comment_id=task["回覆ID"],
             new_content=task["草稿"]
         )
-        
+
         if success:
-            sheets.update_status(task_id, sheets.STATUS_DONE)
+            http.post(f"{RAILWAY_API}/tasks/{task_id}/done", timeout=10)
             app.push_text(f"✅ 任務 {task_id} 編輯完成！")
         else:
             app.push_text(f"❌ 任務 {task_id} 編輯失敗，請手動處理。\n{task['文章URL']}")
-        
-        app.clear_edit_task(task_id)
 
 
 def start_line_webhook():
