@@ -16,7 +16,7 @@ from selenium.webdriver.support import expected_conditions as EC
 import sheets
 import claude_helper
 import editor
-import line_webhook
+import app
 
 # ===================================================
 # 【設定區】
@@ -130,14 +130,14 @@ def get_post_content(driver, post_url: str) -> str:
 
 def process_edit_queue(driver):
     """處理 LINE 確認後的編輯 queue"""
-    queue = line_webhook.get_edit_queue()
+    queue = app.get_edit_queue()
     if not queue:
         return
     
     for task_id in list(queue):
         task = sheets.get_task(task_id)
         if not task:
-            line_webhook.clear_edit_task(task_id)
+            app.clear_edit_task(task_id)
             continue
         
         print(f"✏️ 執行編輯任務：{task_id}")
@@ -150,17 +150,17 @@ def process_edit_queue(driver):
         
         if success:
             sheets.update_status(task_id, sheets.STATUS_DONE)
-            line_webhook.push_text(f"✅ 任務 {task_id} 編輯完成！")
+            app.push_text(f"✅ 任務 {task_id} 編輯完成！")
         else:
-            line_webhook.push_text(f"❌ 任務 {task_id} 編輯失敗，請手動處理。\n{task['文章URL']}")
+            app.push_text(f"❌ 任務 {task_id} 編輯失敗，請手動處理。\n{task['文章URL']}")
         
-        line_webhook.clear_edit_task(task_id)
+        app.clear_edit_task(task_id)
 
 
 def start_line_webhook():
     """在背景執行 LINE webhook server"""
-    from line_webhook import app
-    app.run(port=5001, debug=False, use_reloader=False)
+    from app import app as flask_app
+    flask_app.run(port=5001, debug=False, use_reloader=False)
 
 
 def run_finfo_bot():
@@ -236,7 +236,7 @@ def run_finfo_bot():
                             print(f"📊 任務已存入 Sheets：{task_id}")
 
                             # ⑥ LINE 推播審核
-                            line_webhook.push_review(task_id, title, link, draft)
+                            app.push_review(task_id, title, link, draft)
                             print(f"📱 LINE 推播完成")
 
                         else:
