@@ -1,9 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 import gspread
-import json
 import os
-import tempfile
 from datetime import datetime
 
 # ===================================================
@@ -25,17 +23,8 @@ STATUS_DONE      = "已送出"
 
 def get_client():
     """建立 gspread 連線（service account）"""
-    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-    if not creds_json:
-        raise ValueError("請設定環境變數 GOOGLE_CREDENTIALS_JSON")
-    
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-        f.write(creds_json)
-        tmp_path = f.name
-    
-    client = gspread.service_account(filename=tmp_path)
-    os.unlink(tmp_path)
-    return client
+    creds_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "credentials.json")
+    return gspread.service_account(filename=creds_path)
 
 
 def get_sheet():
