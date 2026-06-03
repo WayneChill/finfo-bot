@@ -33,8 +33,14 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", comment_block)
         time.sleep(0.5)
 
-        # 2. 直接找 operation-menu-link（頁面上只有自己的回覆才有此按鈕）
-        menu_btn = driver.find_element(By.CSS_SELECTOR, "#operation-menu-link")
+        # 2. Hover 到留言區塊讓選單按鈕出現，再等它進 DOM 後點擊
+        actions = ActionChains(driver)
+        actions.move_to_element(comment_block).perform()
+        time.sleep(0.5)
+
+        menu_btn = wait.until(EC.presence_of_element_located(
+            (By.CSS_SELECTOR, "#operation-menu-link")
+        ))
         driver.execute_script("arguments[0].click();", menu_btn)
         time.sleep(0.8)
 
@@ -58,7 +64,6 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
         time.sleep(0.3)
 
         # 5. 全選清空，貼上新內容
-        actions = ActionChains(driver)
         actions.key_down(Keys.CONTROL).send_keys('a').key_up(Keys.CONTROL).perform()
         time.sleep(0.3)
         actions.send_keys(Keys.DELETE).perform()
