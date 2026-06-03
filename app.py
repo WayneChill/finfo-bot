@@ -150,6 +150,17 @@ def reset_task(task_id):
     return jsonify({"ok": True, "task_id": task_id, "status": sheets.STATUS_APPROVED})
 
 
+@app.route("/tasks/<task_id>/update_comment_id", methods=["POST"])
+def update_comment_id(task_id):
+    data = request.get_json()
+    new_comment_id = data.get("comment_id")
+    if not new_comment_id:
+        return jsonify({"error": "comment_id required"}), 400
+    with sheets._get_conn() as conn:
+        conn.execute("UPDATE tasks SET 回覆ID = ? WHERE ID = ?", (new_comment_id, task_id))
+    return jsonify({"ok": True, "task_id": task_id, "comment_id": new_comment_id})
+
+
 @app.route("/line/webhook", methods=['POST'])
 def webhook():
     signature = request.headers['X-Line-Signature']
