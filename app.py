@@ -37,19 +37,27 @@ pending_edit = {}
 # ===================================================
 
 def push_review(task_id: str, post_title: str, post_url: str, draft: str):
-    """推播草稿給你審核（Flex Message 按鈕版）"""
-    title_text = post_title[:50] + ("…" if len(post_title) > 50 else "")
-    draft_text  = draft[:200]  + ("…" if len(draft) > 200 else "")
+    """推播草稿給你審核：文字訊息（完整草稿）+ Flex 按鈕訊息"""
+    # 訊息一：完整內容，方便閱讀與複製
+    text_msg = TextSendMessage(text=(
+        f"📌 任務 #{task_id}\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"📄 {post_title}\n"
+        f"🔗 {post_url}\n"
+        f"━━━━━━━━━━━━━━\n"
+        f"💬 草稿內容：\n\n{draft}"
+    ))
 
+    # 訊息二：Flex 垂直按鈕，含查看文章連結
+    title_short = post_title[:40] + ("…" if len(post_title) > 40 else "")
     bubble = {
         "type": "bubble",
         "styles": {
             "header": {"backgroundColor": "#EBF5FB"},
-            "footer": {"backgroundColor": "#F4F6F7"}
+            "body":   {"backgroundColor": "#FDFEFE"}
         },
         "header": {
-            "type": "box",
-            "layout": "vertical",
+            "type": "box", "layout": "vertical",
             "contents": [
                 {"type": "text", "text": "📌 新文章待審核",
                  "size": "xs", "color": "#2E86C1", "weight": "bold"},
@@ -58,44 +66,32 @@ def push_review(task_id: str, post_title: str, post_url: str, draft: str):
             ]
         },
         "body": {
-            "type": "box",
-            "layout": "vertical",
-            "spacing": "sm",
+            "type": "box", "layout": "vertical", "spacing": "sm",
             "contents": [
-                {"type": "text", "text": title_text,
-                 "weight": "bold", "size": "sm", "wrap": True, "color": "#2C3E50"},
-                {"type": "separator", "margin": "sm"},
-                {"type": "text", "text": draft_text,
-                 "size": "xs", "wrap": True, "color": "#566573", "margin": "sm"}
-            ]
-        },
-        "footer": {
-            "type": "box",
-            "layout": "horizontal",
-            "spacing": "sm",
-            "contents": [
-                {
-                    "type": "button", "style": "primary", "color": "#27AE60", "height": "sm",
-                    "action": {"type": "postback", "label": "✅ 確認",
-                               "data": f"confirm_{task_id}", "displayText": f"確認{task_id}"}
-                },
-                {
-                    "type": "button", "style": "primary", "color": "#2E86C1", "height": "sm",
-                    "action": {"type": "postback", "label": "✏️ 修改",
-                               "data": f"edit_{task_id}", "displayText": f"修改{task_id}"}
-                },
-                {
-                    "type": "button", "style": "secondary", "height": "sm",
-                    "action": {"type": "postback", "label": "⏭️ 略過",
-                               "data": f"skip_{task_id}", "displayText": f"略過{task_id}"}
-                }
+                {"type": "text", "text": title_short,
+                 "size": "sm", "wrap": True, "color": "#2C3E50", "weight": "bold"},
+                {"type": "separator", "margin": "md"},
+                {"type": "button", "style": "link", "height": "sm",
+                 "action": {"type": "uri", "label": "🔗 查看文章", "uri": post_url}},
+                {"type": "separator"},
+                {"type": "button", "style": "primary", "color": "#27AE60",
+                 "action": {"type": "postback", "label": "✅  確認送出",
+                            "data": f"confirm_{task_id}", "displayText": f"確認{task_id}"}},
+                {"type": "button", "style": "primary", "color": "#2E86C1",
+                 "margin": "sm",
+                 "action": {"type": "postback", "label": "✏️  修改草稿",
+                            "data": f"edit_{task_id}", "displayText": f"修改{task_id}"}},
+                {"type": "button", "style": "secondary",
+                 "margin": "sm",
+                 "action": {"type": "postback", "label": "⏭️  略過此篇",
+                            "data": f"skip_{task_id}", "displayText": f"略過{task_id}"}}
             ]
         }
     }
 
     line_bot_api.push_message(
         LINE_USER_ID,
-        FlexSendMessage(alt_text=f"新任務 #{task_id}：{title_text}", contents=bubble)
+        [text_msg, FlexSendMessage(alt_text=f"任務 #{task_id} 請審核", contents=bubble)]
     )
 
 

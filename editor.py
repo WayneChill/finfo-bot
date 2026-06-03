@@ -60,16 +60,15 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", editor_box)
         time.sleep(0.5)
         editor_box.click()
-        time.sleep(0.3)
+        time.sleep(0.5)
 
-        # 5. 全選清空，貼上新內容
-        actions.key_down(Keys.CONTROL).send_keys('a').key_up(Keys.CONTROL).perform()
-        time.sleep(0.3)
-        actions.send_keys(Keys.DELETE).perform()
-        time.sleep(0.3)
-
+        # 5. 全選清空，貼上新內容（直接對 editor_box 送鍵，避免 ActionChains 失焦）
+        editor_box.send_keys(Keys.CONTROL + 'a')
+        time.sleep(0.2)
+        editor_box.send_keys(Keys.DELETE)
+        time.sleep(0.2)
         pyperclip.copy(new_content)
-        actions.key_down(Keys.CONTROL).send_keys('v').key_up(Keys.CONTROL).perform()
+        editor_box.send_keys(Keys.CONTROL + 'v')
         time.sleep(1)
 
         # 6. 送出
@@ -81,7 +80,9 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
             submit_btn = driver.find_element(By.CSS_SELECTOR, submit_selector)
             driver.execute_script("arguments[0].click();", submit_btn)
         except Exception:
-            actions.send_keys(Keys.TAB).send_keys(Keys.TAB).send_keys(Keys.ENTER).perform()
+            editor_box.send_keys(Keys.TAB)
+            editor_box.send_keys(Keys.TAB)
+            editor_box.send_keys(Keys.ENTER)
 
         time.sleep(2)
         print(f"✅ 編輯成功：comment_id={comment_id}")
