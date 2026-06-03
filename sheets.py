@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 import gspread
+from google.oauth2.service_account import Credentials
 import json
 import os
 from datetime import datetime
@@ -22,6 +23,12 @@ STATUS_EDITING   = "修改中"
 STATUS_DONE      = "已送出"
 
 
+SCOPES = [
+    "https://spreadsheets.google.com/feeds",
+    "https://www.googleapis.com/auth/drive",
+]
+
+
 def get_client():
     """建立 gspread 連線（service account）"""
     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
@@ -29,10 +36,11 @@ def get_client():
         raise ValueError("請設定環境變數 GOOGLE_CREDENTIALS_JSON")
 
     creds_dict = json.loads(creds_json)
-    # 環境變數裡的 \n 是字面字串，需還原成真正的換行符，否則 JWT 簽名會失敗
+    # Railway 環境變數會把真正的換行符變成字面 \n，強制還原後 JWT 才能正確簽名
     creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
 
-    return gspread.service_account_from_dict(creds_dict)
+    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+    return gspread.authorize(creds)
 
 
 def get_sheet():
