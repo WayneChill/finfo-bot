@@ -42,15 +42,15 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
             (By.CSS_SELECTOR, "#operation-menu-link")
         ))
         driver.execute_script("arguments[0].click();", menu_btn)
-        time.sleep(0.8)
+        time.sleep(1.5)  # 等 dropdown 動畫完成
 
-        # 3. 點「編輯回應」
-        edit_btn = wait.until(EC.element_to_be_clickable((
+        # 3. 點「編輯回應」（用 presence 找到後直接 JS click，不等 clickable 狀態）
+        edit_btn = wait.until(EC.presence_of_element_located((
             By.CSS_SELECTOR,
             f"a.comment-editor-trigger[data-target='#comment-{comment_id}-editor']"
         )))
         driver.execute_script("arguments[0].click();", edit_btn)
-        time.sleep(1.5)
+        time.sleep(2)
 
         # 4. 找編輯框
         editor_box = wait.until(EC.presence_of_element_located((
