@@ -99,23 +99,26 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", editor_box)
         time.sleep(0.3)
 
-        # 5. 用 JS 直接寫入內容（contenteditable 用 textContent）
+        # 5. 用 innerText 寫入（保留 \n 換行）
         driver.execute_script("""
             var el = arguments[0], val = arguments[1];
             el.focus();
-            el.textContent = val;
+            el.innerText = val;
             el.dispatchEvent(new Event('input',  {bubbles: true}));
             el.dispatchEvent(new Event('change', {bubbles: true}));
-            el.dispatchEvent(new Event('keyup',  {bubbles: true}));
         """, editor_box, new_content)
         time.sleep(0.8)
 
-        # 6. 送出
-        submit_btn = _find_submit_btn(driver, comment_id)
-        if submit_btn:
+        # 6. 找緊接在 editor_box 之後的 submit 按鈕（確保是編輯表單的按鈕）
+        try:
+            submit_btn = editor_box.find_element(
+                By.XPATH, "following::button[@type='submit'][1]"
+            )
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_btn)
+            time.sleep(0.3)
             driver.execute_script("arguments[0].click();", submit_btn)
-        else:
-            editor_box.send_keys(Keys.TAB, Keys.ENTER)
+        except Exception:
+            editor_box.send_keys(Keys.CONTROL + Keys.RETURN)
 
         time.sleep(2)
         print(f"✅ 編輯成功：comment_id={comment_id}")
