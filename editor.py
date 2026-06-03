@@ -8,36 +8,25 @@ from selenium.webdriver.support import expected_conditions as EC
 
 
 def _find_editor_box(driver, comment_id: str):
-    """嘗試多種 selector 找到編輯框，回傳第一個找到的元素"""
-    selectors = [
-        f"#comment-{comment_id}-editor textarea",
-        f"#comment-{comment_id}-editor [contenteditable='true']",
-        f"#comment_{comment_id}_editor textarea",
-        "form.edit-comment textarea",
-        "textarea.comment-body",
-        ".comment-editor textarea",
-        "textarea[name='comment[body]']",
-    ]
-    for sel in selectors:
-        try:
-            el = WebDriverWait(driver, 4).until(
-                EC.visibility_of_element_located((By.CSS_SELECTOR, sel))
+    """找到編輯框（contenteditable.bg-white）"""
+    try:
+        el = WebDriverWait(driver, 6).until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "[contenteditable].bg-white")
             )
-            print(f"  ✔ 找到編輯框：{sel}")
-            return el
-        except Exception:
-            continue
-    return None
+        )
+        print("  ✔ 找到編輯框：[contenteditable].bg-white")
+        return el
+    except Exception:
+        return None
 
 
 def _find_submit_btn(driver, comment_id: str):
-    """嘗試多種 selector 找到送出按鈕"""
+    """找送出按鈕"""
     selectors = [
-        f"#comment-{comment_id}-editor button[type='submit']",
-        f"#comment-{comment_id}-editor input[type='submit']",
-        f"#comment_{comment_id}_editor button[type='submit']",
-        "form.edit-comment button[type='submit']",
-        "form.edit-comment input[type='submit']",
+        "button[type='submit'].bg-primary",
+        "button[type='submit']",
+        "input[type='submit']",
         "button[name='commit']",
     ]
     for sel in selectors:
@@ -110,17 +99,14 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", editor_box)
         time.sleep(0.3)
 
-        # 5. 用 JS 直接寫入內容（最可靠，不依賴鍵盤模擬）
+        # 5. 用 JS 直接寫入內容（contenteditable 用 textContent）
         driver.execute_script("""
             var el = arguments[0], val = arguments[1];
             el.focus();
-            if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
-                el.value = val;
-            } else {
-                el.textContent = val;
-            }
+            el.textContent = val;
             el.dispatchEvent(new Event('input',  {bubbles: true}));
             el.dispatchEvent(new Event('change', {bubbles: true}));
+            el.dispatchEvent(new Event('keyup',  {bubbles: true}));
         """, editor_box, new_content)
         time.sleep(0.8)
 
