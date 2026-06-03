@@ -144,6 +144,12 @@ def mark_task_fail(task_id):
     return jsonify({"ok": True})
 
 
+@app.route("/tasks/<task_id>/reset", methods=["POST"])
+def reset_task(task_id):
+    sheets.update_status(task_id, sheets.STATUS_APPROVED)
+    return jsonify({"ok": True, "task_id": task_id, "status": sheets.STATUS_APPROVED})
+
+
 @app.route("/line/webhook", methods=['POST'])
 def webhook():
     signature = request.headers['X-Line-Signature']
