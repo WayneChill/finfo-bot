@@ -125,6 +125,13 @@ def get_approved_tasks():
     return jsonify(sheets.get_approved_tasks())
 
 
+@app.route("/tasks/all", methods=["GET"])
+def get_all_tasks():
+    with sheets._get_conn() as conn:
+        rows = conn.execute("SELECT ID, 文章URL, 回覆ID, 狀態, 建立時間 FROM tasks ORDER BY 建立時間 DESC").fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
 @app.route("/tasks/<task_id>/done", methods=["POST"])
 def mark_task_done(task_id):
     sheets.update_status(task_id, sheets.STATUS_DONE)
