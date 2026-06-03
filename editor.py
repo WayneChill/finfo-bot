@@ -108,19 +108,10 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
         editor_box.send_keys(Keys.CONTROL + 'v')
         time.sleep(1)
 
-        # 6. 找送出按鈕並點擊（排除 review modal 按鈕，用 JS click 不管 visible）
-        submit_btn = None
-        for btn in driver.find_elements(By.CSS_SELECTOR, "button.btn-primary.btn-block"):
-            cls = btn.get_attribute('class') or ''
-            print(f"  候選按鈕：displayed={btn.is_displayed()}  class={cls!r}")
-            if 'confirm-' not in cls:
-                submit_btn = btn
-                break
-
-        if not submit_btn:
-            raise Exception("找不到編輯表單的送出按鈕")
-
-        print(f"  點擊送出按鈕")
+        # 6. 點送出按鈕
+        submit_btn = wait.until(EC.presence_of_element_located(
+            (By.CSS_SELECTOR, "input[type='submit'][name='commit']")
+        ))
         driver.execute_script("arguments[0].click();", submit_btn)
 
         # 驗證表單關閉
