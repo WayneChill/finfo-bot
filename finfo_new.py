@@ -95,24 +95,14 @@ def post_placeholder(driver, post_url: str) -> str | None:
 
 
 def get_latest_own_comment_id(driver) -> str | None:
-    """
-    從頁面找到最新的自己的回覆 ID
-    找 data-comment-id 中有 operation-menu-link 的區塊（代表是自己的回覆）
-    """
+    """從頁面找到最新回覆的 data-comment-id"""
     try:
-        # 找所有有 operation-dropdown 的 comment 區塊（只有自己的回覆才有編輯選單）
         elements = driver.find_elements(
             By.CSS_SELECTOR,
-            "div[data-comment-id] .operation-dropdown"
+            "div.comment-content[data-comment-id]"
         )
         if elements:
-            # 最後一個通常是最新的
-            last = elements[-1]
-            parent = last.find_element(
-                By.XPATH,
-                "ancestor::div[@data-comment-id]"
-            )
-            comment_id = parent.get_attribute("data-comment-id")
+            comment_id = elements[-1].get_attribute("data-comment-id")
             print(f"🆔 取得回覆 ID：{comment_id}")
             return comment_id
     except Exception as e:
