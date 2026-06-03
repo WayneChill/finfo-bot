@@ -44,10 +44,9 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
         driver.execute_script("arguments[0].click();", menu_btn)
         time.sleep(1.5)  # 等 dropdown 動畫完成
 
-        # 3. 點「編輯回應」（用 presence 找到後直接 JS click，不等 clickable 狀態）
+        # 3. 點「編輯回應」- 用文字內容定位，不依賴 data-target 格式
         edit_btn = wait.until(EC.presence_of_element_located((
-            By.CSS_SELECTOR,
-            f"a.comment-editor-trigger[data-target='#comment-{comment_id}-editor']"
+            By.XPATH, "//a[contains(text(), '編輯回應')]"
         )))
         driver.execute_script("arguments[0].click();", edit_btn)
         time.sleep(2)

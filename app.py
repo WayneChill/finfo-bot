@@ -8,8 +8,7 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage,
-    TemplateSendMessage, ButtonsTemplate, PostbackAction,
-    PostbackEvent, QuickReply, QuickReplyButton, MessageAction
+    FlexSendMessage, PostbackEvent
 )
 
 import sheets
@@ -38,25 +37,65 @@ pending_edit = {}
 # ===================================================
 
 def push_review(task_id: str, post_title: str, post_url: str, draft: str):
-    """推播草稿給你審核"""
-    message = f"""📌 新文章待審核
-━━━━━━━━━━━━━━
-🆔 任務ID：{task_id}
-📄 標題：{post_title}
-🔗 {post_url}
-━━━━━━━━━━━━━━
-💬 草稿內容：
+    """推播草稿給你審核（Flex Message 按鈕版）"""
+    title_text = post_title[:50] + ("…" if len(post_title) > 50 else "")
+    draft_text  = draft[:200]  + ("…" if len(draft) > 200 else "")
 
-{draft}
-━━━━━━━━━━━━━━
-回覆以下指令：
-✅ 確認{task_id}
-✏️ 修改{task_id} [你的修改意見]
-⏭️ 略過{task_id}"""
+    bubble = {
+        "type": "bubble",
+        "styles": {
+            "header": {"backgroundColor": "#EBF5FB"},
+            "footer": {"backgroundColor": "#F4F6F7"}
+        },
+        "header": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {"type": "text", "text": "📌 新文章待審核",
+                 "size": "xs", "color": "#2E86C1", "weight": "bold"},
+                {"type": "text", "text": f"任務 #{task_id}",
+                 "size": "xl", "weight": "bold", "color": "#1A252F"}
+            ]
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "spacing": "sm",
+            "contents": [
+                {"type": "text", "text": title_text,
+                 "weight": "bold", "size": "sm", "wrap": True, "color": "#2C3E50"},
+                {"type": "separator", "margin": "sm"},
+                {"type": "text", "text": draft_text,
+                 "size": "xs", "wrap": True, "color": "#566573", "margin": "sm"}
+            ]
+        },
+        "footer": {
+            "type": "box",
+            "layout": "horizontal",
+            "spacing": "sm",
+            "contents": [
+                {
+                    "type": "button", "style": "primary", "color": "#27AE60", "height": "sm",
+                    "action": {"type": "postback", "label": "✅ 確認",
+                               "data": f"confirm_{task_id}", "displayText": f"確認{task_id}"}
+                },
+                {
+                    "type": "button", "style": "primary", "color": "#2E86C1", "height": "sm",
+                    "action": {"type": "postback", "label": "✏️ 修改",
+                               "data": f"edit_{task_id}", "displayText": f"修改{task_id}"}
+                },
+                {
+                    "type": "button", "style": "secondary", "height": "sm",
+                    "action": {"type": "postback", "label": "⏭️ 略過",
+                               "data": f"skip_{task_id}", "displayText": f"略過{task_id}"}
+                }
+            ]
+        }
+    }
 
     line_bot_api.push_message(
         LINE_USER_ID,
-        TextSendMessage(text=message)
+        FlexSendMessage(alt_text=f"新任務 #{task_id}：{title_text}", contents=bubble)
     )
 
 
@@ -146,6 +185,17 @@ def handle_message(event):
             event.reply_token,
             TextSendMessage(text="指令格式：\n確認{ID}\n修改{ID} {意見}\n略過{ID}")
         )
+
+
+@handler.add(PostbackEvent)
+def handle_postback(event):
+    data = event.postback.data
+    if data.startswith("confirm_"):
+        handle_approve(data[8:])
+    elif data.startswith("edit_"):
+        handle_edit_request(data[5:], "")
+    elif data.startswith("skip_"):
+        handle_skip(data[5:])
 
 
 def handle_approve(task_id: str):
