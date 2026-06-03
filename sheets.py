@@ -40,7 +40,7 @@ _init_db()
 
 
 def add_task(post_url: str, post_title: str, comment_id: str, draft: str) -> str:
-    task_id = datetime.now().strftime("%Y%m%d%H%M%S")
+    task_id = post_url.rstrip("/").split("/")[-1]
     with _get_conn() as conn:
         conn.execute(
             "INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?, ?)",
