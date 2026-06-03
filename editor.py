@@ -7,6 +7,47 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 
+def _find_editor_box(driver, comment_id: str):
+    """嘗試多種 selector 找到編輯框，回傳第一個找到的元素"""
+    selectors = [
+        f"#comment-{comment_id}-editor textarea",
+        f"#comment-{comment_id}-editor [contenteditable='true']",
+        f"#comment_{comment_id}_editor textarea",
+        "form.edit-comment textarea",
+        "textarea.comment-body",
+        ".comment-editor textarea",
+        "textarea[name='comment[body]']",
+    ]
+    for sel in selectors:
+        try:
+            el = WebDriverWait(driver, 4).until(
+                EC.visibility_of_element_located((By.CSS_SELECTOR, sel))
+            )
+            print(f"  ✔ 找到編輯框：{sel}")
+            return el
+        except Exception:
+            continue
+    return None
+
+
+def _find_submit_btn(driver, comment_id: str):
+    """嘗試多種 selector 找到送出按鈕"""
+    selectors = [
+        f"#comment-{comment_id}-editor button[type='submit']",
+        f"#comment-{comment_id}-editor input[type='submit']",
+        f"#comment_{comment_id}_editor button[type='submit']",
+        "form.edit-comment button[type='submit']",
+        "form.edit-comment input[type='submit']",
+        "button[name='commit']",
+    ]
+    for sel in selectors:
+        try:
+            return driver.find_element(By.CSS_SELECTOR, sel)
+        except Exception:
+            continue
+    return None
+
+
 def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bool:
     """
     找到指定回覆並編輯成新內容
@@ -26,63 +67,58 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
 
         wait = WebDriverWait(driver, 10)
 
-        # 1. 用正確的 HTML 結構定位回覆區塊
+        # 1. 定位回覆區塊
         comment_block = wait.until(EC.presence_of_element_located(
             (By.CSS_SELECTOR, f"div.comment-content[data-comment-id='{comment_id}']")
         ))
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", comment_block)
         time.sleep(0.5)
 
-        # 2. Hover 到留言區塊讓選單按鈕出現，再等它進 DOM 後點擊
-        actions = ActionChains(driver)
-        actions.move_to_element(comment_block).perform()
+        # 2. Hover 讓選單按鈕出現
+        ActionChains(driver).move_to_element(comment_block).perform()
         time.sleep(0.5)
 
         menu_btn = wait.until(EC.presence_of_element_located(
             (By.CSS_SELECTOR, "#operation-menu-link")
         ))
         driver.execute_script("arguments[0].click();", menu_btn)
-        time.sleep(1.5)  # 等 dropdown 動畫完成
+        time.sleep(1.5)
 
-        # 3. 點「編輯回應」- 用文字內容定位，不依賴 data-target 格式
-        edit_btn = wait.until(EC.presence_of_element_located((
-            By.XPATH, "//a[contains(text(), '編輯回應')]"
-        )))
+        # 3. 點「編輯回應」
+        edit_btn = wait.until(EC.presence_of_element_located(
+            (By.XPATH, "//a[contains(text(), '編輯回應')]")
+        ))
         driver.execute_script("arguments[0].click();", edit_btn)
         time.sleep(2)
 
-        # 4. 找編輯框
-        editor_box = wait.until(EC.presence_of_element_located((
-            By.CSS_SELECTOR,
-            f"#comment-{comment_id}-editor textarea, "
-            f"#comment-{comment_id}-editor [contenteditable='true']"
-        )))
-        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", editor_box)
-        time.sleep(0.5)
-        editor_box.click()
-        time.sleep(0.5)
+        # 4. 找編輯框（多種 selector 嘗試）
+        editor_box = _find_editor_box(driver, comment_id)
+        if not editor_box:
+            raise Exception("找不到編輯框，請確認 Finfo 編輯器的 HTML 結構")
 
-        # 5. 全選清空，貼上新內容（直接對 editor_box 送鍵，避免 ActionChains 失焦）
-        editor_box.send_keys(Keys.CONTROL + 'a')
-        time.sleep(0.2)
-        editor_box.send_keys(Keys.DELETE)
-        time.sleep(0.2)
-        pyperclip.copy(new_content)
-        editor_box.send_keys(Keys.CONTROL + 'v')
-        time.sleep(1)
+        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", editor_box)
+        time.sleep(0.3)
+
+        # 5. 用 JS 直接寫入內容（最可靠，不依賴鍵盤模擬）
+        driver.execute_script("""
+            var el = arguments[0], val = arguments[1];
+            el.focus();
+            if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+                el.value = val;
+            } else {
+                el.textContent = val;
+            }
+            el.dispatchEvent(new Event('input',  {bubbles: true}));
+            el.dispatchEvent(new Event('change', {bubbles: true}));
+        """, editor_box, new_content)
+        time.sleep(0.8)
 
         # 6. 送出
-        submit_selector = (
-            f"#comment-{comment_id}-editor button[type='submit'], "
-            f"#comment-{comment_id}-editor input[type='submit']"
-        )
-        try:
-            submit_btn = driver.find_element(By.CSS_SELECTOR, submit_selector)
+        submit_btn = _find_submit_btn(driver, comment_id)
+        if submit_btn:
             driver.execute_script("arguments[0].click();", submit_btn)
-        except Exception:
-            editor_box.send_keys(Keys.TAB)
-            editor_box.send_keys(Keys.TAB)
-            editor_box.send_keys(Keys.ENTER)
+        else:
+            editor_box.send_keys(Keys.TAB, Keys.ENTER)
 
         time.sleep(2)
         print(f"✅ 編輯成功：comment_id={comment_id}")
