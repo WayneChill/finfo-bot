@@ -108,11 +108,18 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
         editor_box.send_keys(Keys.CONTROL + 'v')
         time.sleep(1)
 
-        # 6. 在同一個 <form> 裡找 btn-primary 送出
-        submit_btn = editor_box.find_element(
-            By.XPATH, "ancestor::form[1]//button[contains(@class,'btn-primary')]"
-        )
-        print(f"  送出按鈕 class={submit_btn.get_attribute('class')!r}")
+        # 6. 找送出按鈕：btn-primary btn-block，排除 review modal 的 confirm- 按鈕
+        submit_btn = None
+        for btn in driver.find_elements(By.CSS_SELECTOR, "button.btn-primary.btn-block"):
+            cls = btn.get_attribute('class') or ''
+            if 'confirm-' not in cls and btn.is_displayed():
+                submit_btn = btn
+                break
+
+        if not submit_btn:
+            raise Exception("找不到編輯表單的送出按鈕")
+
+        print(f"  送出按鈕：class={submit_btn.get_attribute('class')!r}")
         submit_btn.click()
 
         # 驗證表單關閉
