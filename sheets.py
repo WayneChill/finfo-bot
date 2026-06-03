@@ -43,7 +43,7 @@ def add_task(post_url: str, post_title: str, comment_id: str, draft: str) -> str
     task_id = post_url.rstrip("/").split("/")[-1]
     with _get_conn() as conn:
         conn.execute(
-            "INSERT INTO tasks VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO tasks VALUES (?, ?, ?, ?, ?, ?, ?)",
             (task_id, post_url, post_title, comment_id, draft, STATUS_PENDING,
              datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         )

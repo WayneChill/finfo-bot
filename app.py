@@ -75,12 +75,15 @@ def push_text(text: str):
 @app.route("/tasks", methods=["POST"])
 def create_task():
     data = request.get_json()
-    task_id = sheets.add_task(
-        post_url=data["post_url"],
-        post_title=data["post_title"],
-        comment_id=data["comment_id"],
-        draft=data["draft"],
-    )
+    try:
+        task_id = sheets.add_task(
+            post_url=data["post_url"],
+            post_title=data["post_title"],
+            comment_id=data["comment_id"],
+            draft=data["draft"],
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
     return jsonify({"task_id": task_id}), 201
 
 
