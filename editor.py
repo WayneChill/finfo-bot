@@ -33,11 +33,8 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", comment_block)
         time.sleep(0.5)
 
-        # 2. 往上找包含 operation-menu-link 的最近祖先，再往下定位按鈕
-        menu_btn = comment_block.find_element(
-            By.XPATH,
-            "ancestor::*[.//a[@id='operation-menu-link']][1]//a[@id='operation-menu-link']"
-        )
+        # 2. 直接找 operation-menu-link（頁面上只有自己的回覆才有此按鈕）
+        menu_btn = driver.find_element(By.CSS_SELECTOR, "#operation-menu-link")
         driver.execute_script("arguments[0].click();", menu_btn)
         time.sleep(0.8)
 

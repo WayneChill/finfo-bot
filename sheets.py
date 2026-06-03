@@ -9,6 +9,7 @@ STATUS_APPROVED = "已確認"
 STATUS_REJECTED = "已略過"
 STATUS_EDITING  = "修改中"
 STATUS_DONE     = "已送出"
+STATUS_FAILED   = "編輯失敗"
 
 
 def _get_conn():

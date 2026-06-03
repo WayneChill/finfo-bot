@@ -146,6 +146,7 @@ def process_edit_queue(driver):
             http.post(f"{RAILWAY_API}/tasks/{task_id}/done", timeout=10)
             app.push_text(f"✅ 任務 {task_id} 編輯完成！")
         else:
+            http.post(f"{RAILWAY_API}/tasks/{task_id}/fail", timeout=10)
             app.push_text(f"❌ 任務 {task_id} 編輯失敗，請手動處理。\n{task['文章URL']}")
 
 
