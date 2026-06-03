@@ -109,18 +109,35 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
         """, editor_box, new_content)
         time.sleep(0.8)
 
-        # 6. 找緊接在 editor_box 之後的 submit 按鈕（確保是編輯表單的按鈕）
+        # 6. 送出：找 editor_box 後最近的 submit 按鈕，用原生 click 觸發 AJAX handler
+        submitted = False
         try:
             submit_btn = editor_box.find_element(
                 By.XPATH, "following::button[@type='submit'][1]"
             )
+            print(f"  送出按鈕：{submit_btn.text!r} class={submit_btn.get_attribute('class')!r}")
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", submit_btn)
             time.sleep(0.3)
-            driver.execute_script("arguments[0].click();", submit_btn)
-        except Exception:
+            submit_btn.click()  # 原生 click，觸發瀏覽器事件鏈
+            submitted = True
+        except Exception as e:
+            print(f"  找不到 submit 按鈕，改用 Ctrl+Enter：{e}")
+
+        if not submitted:
             editor_box.send_keys(Keys.CONTROL + Keys.RETURN)
 
-        time.sleep(2)
+        # 驗證：等編輯框消失（表示送出成功）
+        try:
+            WebDriverWait(driver, 5).until(
+                EC.invisibility_of_element(editor_box)
+            )
+            print(f"✅ 編輯成功（表單已關閉）：comment_id={comment_id}")
+        except Exception:
+            # 表單還在 → 可能送出失敗，再試一次 Ctrl+Enter
+            print("  表單未關閉，再試 Ctrl+Enter...")
+            editor_box.send_keys(Keys.CONTROL + Keys.RETURN)
+            time.sleep(3)
+
         print(f"✅ 編輯成功：comment_id={comment_id}")
         return True
 
