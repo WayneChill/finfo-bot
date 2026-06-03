@@ -2,7 +2,7 @@ import sqlite3
 import os
 from datetime import datetime
 
-DB_PATH = "/app/data/data.db"
+DB_PATH = os.environ.get("DB_PATH", "data.db")
 
 STATUS_PENDING  = "待審核"
 STATUS_APPROVED = "已確認"
