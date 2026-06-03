@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 import gspread
+import json
 import os
 from datetime import datetime
 
@@ -23,8 +24,15 @@ STATUS_DONE      = "已送出"
 
 def get_client():
     """建立 gspread 連線（service account）"""
-    creds_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "credentials.json")
-    return gspread.service_account(filename=creds_path)
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+    if not creds_json:
+        raise ValueError("請設定環境變數 GOOGLE_CREDENTIALS_JSON")
+
+    creds_dict = json.loads(creds_json)
+    # 環境變數裡的 \n 是字面字串，需還原成真正的換行符，否則 JWT 簽名會失敗
+    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+
+    return gspread.service_account_from_dict(creds_dict)
 
 
 def get_sheet():
