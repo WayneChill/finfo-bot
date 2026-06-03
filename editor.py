@@ -21,21 +21,6 @@ def _find_editor_box(driver, comment_id: str):
         return None
 
 
-def _find_submit_btn(driver, comment_id: str):
-    """找送出按鈕"""
-    selectors = [
-        "button[type='submit'].bg-primary",
-        "button[type='submit']",
-        "input[type='submit']",
-        "button[name='commit']",
-    ]
-    for sel in selectors:
-        try:
-            return driver.find_element(By.CSS_SELECTOR, sel)
-        except Exception:
-            continue
-    return None
-
 
 def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bool:
     """
