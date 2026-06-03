@@ -94,7 +94,18 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
         # 4. 找編輯框（多種 selector 嘗試）
         editor_box = _find_editor_box(driver, comment_id)
         if not editor_box:
-            raise Exception("找不到編輯框，請確認 Finfo 編輯器的 HTML 結構")
+            # Debug：印出頁面上所有 textarea / contenteditable 的屬性
+            print("=== DEBUG：頁面上所有 textarea ===")
+            for el in driver.find_elements(By.TAG_NAME, "textarea"):
+                print(f"  id={el.get_attribute('id')!r}  "
+                      f"name={el.get_attribute('name')!r}  "
+                      f"class={el.get_attribute('class')!r}")
+            print("=== DEBUG：所有 contenteditable ===")
+            for el in driver.find_elements(By.CSS_SELECTOR, "[contenteditable]"):
+                print(f"  id={el.get_attribute('id')!r}  "
+                      f"class={el.get_attribute('class')!r}  "
+                      f"contenteditable={el.get_attribute('contenteditable')!r}")
+            raise Exception("找不到編輯框，請看上面 DEBUG 輸出確認正確 selector")
 
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", editor_box)
         time.sleep(0.3)
