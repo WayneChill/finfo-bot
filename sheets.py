@@ -18,7 +18,9 @@ def _get_conn():
 
 
 def _init_db():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    db_dir = os.path.dirname(DB_PATH)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
     with _get_conn() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS tasks (
