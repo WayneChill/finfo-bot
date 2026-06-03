@@ -99,27 +99,25 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
         driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", editor_box)
         time.sleep(0.3)
 
-        # 5. 用 innerText 寫入（保留 \n 換行）
-        driver.execute_script("""
-            var el = arguments[0], val = arguments[1];
-            el.focus();
-            el.innerText = val;
-            el.dispatchEvent(new Event('input',  {bubbles: true}));
-            el.dispatchEvent(new Event('change', {bubbles: true}));
-        """, editor_box, new_content)
-        time.sleep(0.8)
+        # 5. 剪貼板貼上（Trix 編輯器用 Ctrl+A → Ctrl+V 最可靠）
+        editor_box.click()
+        time.sleep(0.5)
+        editor_box.send_keys(Keys.CONTROL + 'a')
+        time.sleep(0.3)
+        pyperclip.copy(new_content)
+        editor_box.send_keys(Keys.CONTROL + 'v')
+        time.sleep(1)
 
-        # 6. Debug：印出頁面所有按鈕，找出送出按鈕的真實 selector
-        print("=== DEBUG 按鈕清單 ===")
-        for btn in driver.find_elements(By.TAG_NAME, "button"):
-            print(f"  text={btn.text.strip()!r}  type={btn.get_attribute('type')!r}  "
-                  f"class={btn.get_attribute('class')!r}  "
-                  f"data-action={btn.get_attribute('data-action')!r}")
-        print("=== DEBUG 結束 ===")
+        # 6. 在同一個 <form> 裡找 btn-primary 送出
+        submit_btn = editor_box.find_element(
+            By.XPATH, "ancestor::form[1]//button[contains(@class,'btn-primary')]"
+        )
+        print(f"  送出按鈕 class={submit_btn.get_attribute('class')!r}")
+        submit_btn.click()
 
-        editor_box.send_keys(Keys.CONTROL + Keys.RETURN)
-        time.sleep(3)
-        print(f"✅ 編輯成功：comment_id={comment_id}")
+        # 驗證表單關閉
+        WebDriverWait(driver, 8).until(EC.invisibility_of_element(editor_box))
+        print(f"✅ 編輯成功（表單已關閉）：comment_id={comment_id}")
         return True
 
     except Exception as e:
