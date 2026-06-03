@@ -13,10 +13,13 @@ from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
+import requests as http
 import sheets
 import claude_helper
 import editor
 import app
+
+RAILWAY_API = "https://finfo-bot-production.up.railway.app"
 
 # ===================================================
 # 【設定區】
@@ -218,14 +221,16 @@ def run_finfo_bot():
                             draft = claude_helper.generate_draft(title, post_content)
                             print(f"📝 草稿：{draft[:80]}...")
 
-                            # ⑤ 存到 Sheets
-                            task_id = sheets.add_task(
-                                post_url=link,
-                                post_title=title,
-                                comment_id=comment_id,
-                                draft=draft
-                            )
-                            print(f"📊 任務已存入 Sheets：{task_id}")
+                            # ⑤ 透過 Railway API 新增任務
+                            resp = http.post(f"{RAILWAY_API}/tasks", json={
+                                "post_url": link,
+                                "post_title": title,
+                                "comment_id": comment_id,
+                                "draft": draft,
+                            }, timeout=10)
+                            resp.raise_for_status()
+                            task_id = resp.json()["task_id"]
+                            print(f"📊 任務已存入 Railway DB：{task_id}")
 
                             # ⑥ LINE 推播審核
                             app.push_review(task_id, title, link, draft)

@@ -3,7 +3,7 @@ load_dotenv()
 import os
 import json
 import threading
-from flask import Flask, request, abort
+from flask import Flask, request, abort, jsonify
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
@@ -71,6 +71,18 @@ def push_text(text: str):
 # ===================================================
 # Webhook 處理
 # ===================================================
+
+@app.route("/tasks", methods=["POST"])
+def create_task():
+    data = request.get_json()
+    task_id = sheets.add_task(
+        post_url=data["post_url"],
+        post_title=data["post_title"],
+        comment_id=data["comment_id"],
+        draft=data["draft"],
+    )
+    return jsonify({"task_id": task_id}), 201
+
 
 @app.route("/line/webhook", methods=['POST'])
 def webhook():
