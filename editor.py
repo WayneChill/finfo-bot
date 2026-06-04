@@ -2,6 +2,9 @@ import time
 import pyperclip
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 
 def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bool:
@@ -10,36 +13,40 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
         driver.get(post_url)
         time.sleep(3)
 
-        # 2. 直接用 JS click 觸發編輯按鈕（跳過 hover / 選單）
+        # 2. JS click 觸發編輯按鈕
         triggered = driver.execute_script(
-            "var btn = document.querySelector(\"a.comment-editor-trigger[data-target='#comment-"
-            + comment_id +
-            "-editor']\"); if (btn) { btn.click(); return true; } return false;"
+            "var btn = document.querySelector('a.comment-editor-trigger');"
+            "if (btn) { btn.click(); return true; } return false;"
         )
         if not triggered:
-            raise Exception(f"找不到編輯觸發按鈕 #comment-{comment_id}-editor")
-        time.sleep(1.5)
+            raise Exception("找不到 a.comment-editor-trigger，頁面上可能沒有自己的回覆")
+        time.sleep(5)
 
-        # 3. 找編輯框（textarea 或 contenteditable）
-        editor_sel = f"#comment-{comment_id}-editor textarea, #comment-{comment_id}-editor [contenteditable]"
-        editors = driver.find_elements(By.CSS_SELECTOR, editor_sel)
-        if not editors:
-            raise Exception(f"找不到編輯框 {editor_sel}")
-        editor_box = editors[0]
-
-        # 4. 清空並貼上新內容
-        editor_box.click()
+        # 3. 等 trix-editor 進入編輯模式
+        trix = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, "trix-editor.bg-white"))
+        )
+        trix.click()
         time.sleep(0.3)
-        editor_box.send_keys(Keys.CONTROL + 'a')
-        time.sleep(0.2)
+
+        # 4. 全選
+        actions = ActionChains(driver)
+        actions.key_down(Keys.CONTROL).send_keys('a').key_up(Keys.CONTROL).perform()
+        time.sleep(0.5)
+
+        # 5. 貼上
         pyperclip.copy(new_content)
-        editor_box.send_keys(Keys.CONTROL + 'v')
+        actions = ActionChains(driver)
+        actions.key_down(Keys.CONTROL).send_keys('v').key_up(Keys.CONTROL).perform()
         time.sleep(1)
 
-        # 5. 送出
-        submit = driver.find_element(By.CSS_SELECTOR, "input[type='submit'][name='commit']")
-        driver.execute_script("arguments[0].click();", submit)
-        time.sleep(2)
+        # 6. 送出：focus trix-editor，TAB×3，ENTER
+        trix.click()
+        time.sleep(0.3)
+        actions = ActionChains(driver)
+        actions.send_keys(Keys.TAB).send_keys(Keys.TAB).send_keys(Keys.TAB)
+        actions.send_keys(Keys.ENTER).perform()
+        time.sleep(3)
 
         print(f"✅ 編輯成功：comment_id={comment_id}")
         return True
