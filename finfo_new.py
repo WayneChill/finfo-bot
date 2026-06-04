@@ -30,27 +30,29 @@ KEYWORDS = [
     '實支', '癌症', '重大傷病', '壽險', '失能', '理賠'
 ]
 
-# 佔位文字（搶位用，之後會被替換）
-PLACEHOLDER_OPTIONS = [
-    "這個問題蠻實際的，我整理一下自己的經驗跟看法，等我一下喔～",
-    "有遇過類似的狀況，想跟你分享一些當時的思考過程，稍後補充！",
-    "好問題，這塊我研究過一段時間，來說說我的看法，給你參考看看",
-    "這個我比較熟悉，等我把重點整理清楚一點再回覆你，不要走開～",
-    "剛好有相關的資料，我來幫你整理一下重點，稍等我幾分鐘喔！",
-    "這種情況蠻常見的，我來分享一下自己當初怎麼評估跟決定的",
-]
+PLACEHOLDER = """📌 保險一二三⚡規劃好簡單 — 夫妻雙業務・全台服務
+
+━━━━━━━━━━━━━━━━━━
+👫 為什麼選擇我們?
+━━━━━━━━━━━━━━━━━━
+
+✦ 雙業務制度｜夫妻聯手服務,溝通效率翻倍,不怕找不到人
+✦ 十年實戰經驗｜累積服務 900+ 客戶,經手上千件規劃案
+✦ 客觀不推銷｜佛系成交,讓保險回歸需求本質
+✦ 全台線上服務｜以網路平台為主,不受地域限制
+✦ 完整服務流程｜健檢→規劃→送件→理賠協助,一條龍服務
+
+━━━━━━━━━━━━━━━━━━
+❓編輯回答中，請耐心等候喔
+━━━━━━━━━━━━━━━━━━
+
+如果比較急的話，也可以點頭像來詢問喔"""
 
 PATROL_INTERVAL_MIN = 15
 PATROL_INTERVAL_MAX = 25
 MAX_PROCESSED_CACHE = 500
 
 # ===================================================
-
-
-def get_placeholder():
-    """隨機取一個佔位文字"""
-    import random
-    return random.choice(PLACEHOLDER_OPTIONS)
 
 
 def post_placeholder(driver, post_url: str) -> str | None:
@@ -73,7 +75,7 @@ def post_placeholder(driver, post_url: str) -> str | None:
         actions = ActionChains(driver)
         time.sleep(1)
 
-        placeholder_text = get_placeholder()
+        placeholder_text = PLACEHOLDER
         pyperclip.copy(placeholder_text)
         actions.send_keys(Keys.TAB).perform()
         time.sleep(0.3)
@@ -171,7 +173,21 @@ def run_finfo_bot():
     print("⚠️ 請完成登入，確認留在列表頁後按 Enter 繼續...")
     input()
 
-    processed_posts = []
+    PROCESSED_FILE = "processed_posts.txt"
+
+    def load_processed():
+        try:
+            with open(PROCESSED_FILE, "r", encoding="utf-8") as f:
+                return [line.strip() for line in f if line.strip()]
+        except FileNotFoundError:
+            return []
+
+    def save_processed(posts):
+        with open(PROCESSED_FILE, "w", encoding="utf-8") as f:
+            f.write("\n".join(posts))
+
+    processed_posts = load_processed()
+    print(f"📂 已讀取 {len(processed_posts)} 筆處理記錄")
 
     while True:
         try:
@@ -203,6 +219,7 @@ def run_finfo_bot():
                     print(f"⏭️ 已處理過，略過：{title}")
                 else:
                     processed_posts.append(link)
+                    save_processed(processed_posts)
 
                     if any(kw in title for kw in KEYWORDS):
                         print(f"🎯 鎖定：{title}，準備佔位！")
@@ -241,6 +258,7 @@ def run_finfo_bot():
 
             if len(processed_posts) > MAX_PROCESSED_CACHE:
                 processed_posts = processed_posts[-MAX_PROCESSED_CACHE:]
+                save_processed(processed_posts)
 
             wait_time = random.randint(PATROL_INTERVAL_MIN, PATROL_INTERVAL_MAX)
             print(f"😴 休息 {wait_time} 秒...")
