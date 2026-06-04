@@ -6,3 +6,6 @@ line-bot-sdk
 gspread
 anthropic
 requests
+apscheduler
+pytz
+python-dotenv

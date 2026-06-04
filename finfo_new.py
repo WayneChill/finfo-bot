@@ -247,9 +247,7 @@ def run_finfo_bot():
                             task_id = resp.json()["task_id"]
                             print(f"📊 任務已存入 Railway DB：{task_id}")
 
-                            # ⑥ LINE 推播審核
-                            app.push_review(task_id, title, link, draft)
-                            print(f"📱 LINE 推播完成")
+                            print(f"📱 任務已靜默存入，等待早報推播")
 
                         else:
                             print("⚠️ 未取得回覆 ID，跳過此篇")

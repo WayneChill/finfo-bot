@@ -80,3 +80,14 @@ def get_approved_tasks() -> list:
             "SELECT * FROM tasks WHERE 狀態 = ?", (STATUS_APPROVED,)
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def get_recent_done_tasks(days: int = 7) -> list:
+    from datetime import timedelta
+    cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM tasks WHERE 狀態 IN (?, ?) AND 建立時間 >= ? ORDER BY 建立時間 DESC",
+            (STATUS_DONE, STATUS_REJECTED, cutoff)
+        ).fetchall()
+    return [dict(r) for r in rows]

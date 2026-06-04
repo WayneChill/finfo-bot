@@ -1,7 +1,6 @@
 from dotenv import load_dotenv
 load_dotenv()
 import os
-import json
 import threading
 from flask import Flask, request, abort, jsonify
 from linebot import LineBotApi, WebhookHandler
@@ -10,37 +9,46 @@ from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage,
     FlexSendMessage, PostbackEvent
 )
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+import pytz
 
 import sheets
 import claude_helper
 
-# ===================================================
-# LINE Bot Webhook
-# 整合到現有 Flask app，或獨立跑
-# ===================================================
-
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
-LINE_USER_ID = os.environ.get("LINE_USER_ID")  # 你自己的 LINE user ID
+LINE_USER_ID = os.environ.get("LINE_USER_ID")
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 app = Flask(__name__)
 
-# 暫存「修改中」的 task_id（per user session）
 pending_edit = {}
 
 
 # ===================================================
-# 推播函式（給 finfo.py 呼叫）
+# 工具：推播純文字
 # ===================================================
 
-def push_review(task_id: str, post_title: str, post_url: str, draft: str):
-    """推播草稿給你審核：Flex 卡片含完整草稿 + 三按鈕"""
-    title_short = post_title[:40] + ("…" if len(post_title) > 40 else "")
+def push_text(text: str):
+    line_bot_api.push_message(LINE_USER_ID, TextSendMessage(text=text))
 
-    bubble = {
+
+# ===================================================
+# Flex 卡片組裝
+# ===================================================
+
+def make_task_bubble(task: dict) -> dict:
+    task_id = task["ID"]
+    title = task.get("文章標題", "")
+    post_url = task.get("文章URL", "")
+    draft = task.get("草稿", "")
+    title_short = title[:40] + ("…" if len(title) > 40 else "")
+    draft_preview = draft[:300] + ("…" if len(draft) > 300 else "")
+
+    return {
         "type": "bubble",
         "size": "giga",
         "styles": {
@@ -51,7 +59,7 @@ def push_review(task_id: str, post_title: str, post_url: str, draft: str):
         "header": {
             "type": "box", "layout": "vertical",
             "contents": [
-                {"type": "text", "text": "📌 新文章待審核",
+                {"type": "text", "text": "📌 待審核任務",
                  "size": "xs", "color": "#2E86C1", "weight": "bold"},
                 {"type": "text", "text": f"任務 #{task_id}",
                  "size": "xl", "weight": "bold", "color": "#1A252F"},
@@ -67,7 +75,7 @@ def push_review(task_id: str, post_title: str, post_url: str, draft: str):
                 {"type": "separator"},
                 {"type": "text", "text": "💬 AI 草稿：",
                  "size": "xs", "color": "#2E86C1", "weight": "bold", "margin": "md"},
-                {"type": "text", "text": draft,
+                {"type": "text", "text": draft_preview,
                  "size": "sm", "wrap": True, "color": "#2C3E50", "margin": "sm"}
             ]
         },
@@ -87,22 +95,73 @@ def push_review(task_id: str, post_title: str, post_url: str, draft: str):
         }
     }
 
+
+def push_task_card(task: dict):
+    bubble = make_task_bubble(task)
     line_bot_api.push_message(
         LINE_USER_ID,
-        FlexSendMessage(alt_text=f"任務 #{task_id} 請審核", contents=bubble)
-    )
-
-
-def push_text(text: str):
-    """推播純文字"""
-    line_bot_api.push_message(
-        LINE_USER_ID,
-        TextSendMessage(text=text)
+        FlexSendMessage(alt_text=f"任務 #{task['ID']} 請審核", contents=bubble)
     )
 
 
 # ===================================================
-# Webhook 處理
+# 保留舊介面（finfo_new.py 呼叫，改為靜默不推播）
+# ===================================================
+
+def push_review(task_id: str, post_title: str, post_url: str, draft: str):
+    pass
+
+
+# ===================================================
+# 早報 & 查詢
+# ===================================================
+
+def send_morning_report():
+    pending = sheets.get_pending_tasks()
+    if not pending:
+        push_text("☀️ 早安！目前沒有待審核任務。")
+        return
+
+    push_text(f"☀️ 早安！目前共有 {len(pending)} 筆待審核任務：")
+    for task in pending:
+        push_task_card(task)
+
+
+def send_progress():
+    pending = sheets.get_pending_tasks()
+    if not pending:
+        push_text("目前沒有待審核任務 🎉")
+        return
+    push_text(f"📋 共 {len(pending)} 筆待審核任務：")
+    for task in pending:
+        push_task_card(task)
+
+
+def send_history():
+    done_tasks = sheets.get_recent_done_tasks(days=7)
+    if not done_tasks:
+        push_text("近 7 天沒有已處理的任務。")
+        return
+    lines = [f"📊 近 7 天已處理（共 {len(done_tasks)} 筆）：\n"]
+    for t in done_tasks:
+        icon = "✅" if t["狀態"] == sheets.STATUS_DONE else "⏭️"
+        title_short = t.get("文章標題", "")[:20]
+        lines.append(f"{icon} #{t['ID']}  {title_short}  — {t['狀態']}")
+    push_text("\n".join(lines))
+
+
+# ===================================================
+# APScheduler：每天 08:00 發早報
+# ===================================================
+
+_tz = pytz.timezone("Asia/Taipei")
+scheduler = BackgroundScheduler(timezone=_tz)
+scheduler.add_job(send_morning_report, CronTrigger(hour=8, minute=0, timezone=_tz))
+scheduler.start()
+
+
+# ===================================================
+# Flask 路由
 # ===================================================
 
 @app.route("/tasks", methods=["POST"])
@@ -128,7 +187,9 @@ def get_approved_tasks():
 @app.route("/tasks/all", methods=["GET"])
 def get_all_tasks():
     with sheets._get_conn() as conn:
-        rows = conn.execute("SELECT ID, 文章URL, 回覆ID, 狀態, 建立時間 FROM tasks ORDER BY 建立時間 DESC").fetchall()
+        rows = conn.execute(
+            "SELECT ID, 文章URL, 回覆ID, 狀態, 建立時間 FROM tasks ORDER BY 建立時間 DESC"
+        ).fetchall()
     return jsonify([dict(r) for r in rows])
 
 
@@ -165,7 +226,6 @@ def update_comment_id(task_id):
 def webhook():
     signature = request.headers['X-Line-Signature']
     body = request.get_data(as_text=True)
-    
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
@@ -173,35 +233,31 @@ def webhook():
     return 'OK'
 
 
+# ===================================================
+# LINE 訊息處理
+# ===================================================
+
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     text = event.message.text.strip()
-    
-    # ✅ 確認{task_id}
-    if text.startswith("確認"):
-        task_id = text.replace("確認", "").strip()
-        handle_approve(task_id)
 
-    # ✏️ 修改{task_id} {修改意見}
+    if text == "進度":
+        send_progress()
+    elif text == "歷史":
+        send_history()
+    elif text.startswith("確認"):
+        handle_approve(text.replace("確認", "").strip())
     elif text.startswith("修改"):
         parts = text.replace("修改", "").strip().split(" ", 1)
-        task_id = parts[0]
-        instruction = parts[1] if len(parts) > 1 else ""
-        handle_edit_request(task_id, instruction)
-
-    # ⏭️ 略過{task_id}
+        handle_edit_request(parts[0], parts[1] if len(parts) > 1 else "")
     elif text.startswith("略過"):
-        task_id = text.replace("略過", "").strip()
-        handle_skip(task_id)
-
-    # 處理修改中的對話
+        handle_skip(text.replace("略過", "").strip())
     elif task_id := pending_edit.get(LINE_USER_ID):
         handle_edit_reply(task_id, text)
-
     else:
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="指令格式：\n確認{ID}\n修改{ID} {意見}\n略過{ID}")
+            TextSendMessage(text="指令：\n進度 — 查看待審核任務\n歷史 — 近7天已完成\n確認{ID} / 修改{ID} {意見} / 略過{ID}")
         )
 
 
@@ -216,33 +272,29 @@ def handle_postback(event):
         handle_skip(data[5:])
 
 
+# ===================================================
+# 任務動作
+# ===================================================
+
 def handle_approve(task_id: str):
-    """確認送出"""
     task = sheets.get_task(task_id)
     if not task:
         push_text(f"❌ 找不到任務 {task_id}")
         return
-    
     sheets.update_status(task_id, sheets.STATUS_APPROVED)
     push_text(f"✅ 任務 {task_id} 已確認，Bot 即將編輯回覆...")
-    
-    # 通知 finfo.py 執行編輯（用 flag 或 queue）
     trigger_edit(task_id)
 
 
 def handle_edit_request(task_id: str, instruction: str):
-    """修改草稿"""
     task = sheets.get_task(task_id)
     if not task:
         push_text(f"❌ 找不到任務 {task_id}")
         return
-    
     sheets.update_status(task_id, sheets.STATUS_EDITING)
     pending_edit[LINE_USER_ID] = task_id
-    
     if instruction:
-        # 有修改意見，直接重新生成
-        push_text(f"✏️ 正在根據你的意見修改草稿...")
+        push_text("✏️ 正在根據你的意見修改草稿...")
         new_draft = claude_helper.revise_draft(
             original_draft=task["草稿"],
             instruction=instruction,
@@ -251,23 +303,16 @@ def handle_edit_request(task_id: str, instruction: str):
         sheets.update_draft(task_id, new_draft)
         sheets.update_status(task_id, sheets.STATUS_PENDING)
         pending_edit.pop(LINE_USER_ID, None)
-        
-        push_text(f"""✏️ 修改後草稿：
-━━━━━━━━━━━━━━
-{new_draft}
-━━━━━━━━━━━━━━
-確認{task_id} ／ 修改{task_id} [繼續修改]""")
+        push_text(f"✏️ 修改後草稿：\n━━━━━━━━━━━━━━\n{new_draft}\n━━━━━━━━━━━━━━\n確認{task_id} ／ 修改{task_id} [繼續修改]")
     else:
         push_text(f"請說明要怎麼修改（任務 {task_id}）：")
 
 
 def handle_edit_reply(task_id: str, instruction: str):
-    """修改中的對話回覆"""
     task = sheets.get_task(task_id)
     if not task:
         pending_edit.pop(LINE_USER_ID, None)
         return
-    
     push_text("✏️ 修改中...")
     new_draft = claude_helper.revise_draft(
         original_draft=task["草稿"],
@@ -277,34 +322,25 @@ def handle_edit_reply(task_id: str, instruction: str):
     sheets.update_draft(task_id, new_draft)
     sheets.update_status(task_id, sheets.STATUS_PENDING)
     pending_edit.pop(LINE_USER_ID, None)
-    
-    push_text(f"""✏️ 修改後草稿：
-━━━━━━━━━━━━━━
-{new_draft}
-━━━━━━━━━━━━━━
-確認{task_id} ／ 修改{task_id} [繼續修改]""")
+    push_text(f"✏️ 修改後草稿：\n━━━━━━━━━━━━━━\n{new_draft}\n━━━━━━━━━━━━━━\n確認{task_id} ／ 修改{task_id} [繼續修改]")
 
 
 def handle_skip(task_id: str):
-    """略過（佔位保留）"""
     sheets.update_status(task_id, sheets.STATUS_REJECTED)
-    push_text(f"⏭️ 任務 {task_id} 已略過，佔位文字保留在 Finfo。")
+    push_text(f"⏭️ 任務 {task_id} 已略過。")
 
 
 # ===================================================
-# 編輯 trigger（放到 queue 讓 finfo.py 主迴圈處理）
+# 編輯 queue（finfo_new.py 輪詢用）
 # ===================================================
 
 edit_queue = []
 
 def trigger_edit(task_id: str):
-    """把任務丟進編輯 queue"""
     edit_queue.append(task_id)
-
 
 def get_edit_queue():
     return edit_queue
-
 
 def clear_edit_task(task_id: str):
     if task_id in edit_queue:
