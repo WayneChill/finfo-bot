@@ -40,13 +40,28 @@ def push_text(text: str):
 # Flex 卡片組裝
 # ===================================================
 
+def _extract_qa(full_reply: str) -> str:
+    """從完整回覆模板中抽出 Q&A 區塊內容（用於舊資料 fallback）。"""
+    sep = "━━━━━━━━━━━━━━━━━━"
+    marker = "❓問與答 Q&A"
+    try:
+        idx = full_reply.index(marker)
+        after = full_reply[idx + len(marker):]
+        i1 = after.index(sep)
+        body = after[i1 + len(sep):].lstrip("\n")
+        i2 = body.index(sep)
+        return body[:i2].strip()
+    except ValueError:
+        return full_reply
+
+
 def make_task_bubble(task: dict) -> dict:
     task_id = task["ID"]
     title = task.get("文章標題", "")
     post_url = task.get("文章URL", "")
-    qa = task.get("qa_content") or task.get("草稿", "")
+    qa_raw = task.get("qa_content") or _extract_qa(task.get("草稿", ""))
     title_short = title[:40] + ("…" if len(title) > 40 else "")
-    draft_preview = qa[:300] + ("…" if len(qa) > 300 else "")
+    draft_preview = qa_raw[:300] + ("…" if len(qa_raw) > 300 else "")
 
     return {
         "type": "bubble",
