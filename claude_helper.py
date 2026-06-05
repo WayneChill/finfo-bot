@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 load_dotenv()
 import os
 import requests
+import sheets
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 API_URL = "https://api.anthropic.com/v1/messages"
@@ -105,6 +106,16 @@ def generate_draft(post_title: str, post_content: str = "") -> tuple[str, str]:
     user_prompt = f"請針對以下 Finfo 討論區的提問，撰寫問與答 Q&A 區塊的回答內容：\n\n標題：{post_title}"
     if post_content:
         user_prompt += f"\n\n內容：{post_content[:500]}"
+
+    examples = sheets.find_similar_examples(post_title)
+    if examples:
+        user_prompt += "\n\n以下是類似問題的過去回覆範例，請參考語氣與格式，但不要照抄內容：\n"
+        for i, ex in enumerate(examples, 1):
+            user_prompt += (
+                f"\n【範例{i}】類型：{ex['category']}\n"
+                f"問題：{ex['question_summary']}\n"
+                f"回覆：\n{ex['qa_content']}\n"
+            )
 
     qa_content = _call_api(user_prompt)
     full_reply = REPLY_TEMPLATE.format(qa_content=qa_content)

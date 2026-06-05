@@ -280,6 +280,25 @@ def update_comment_id(task_id):
     return jsonify({"ok": True, "task_id": task_id, "comment_id": new_comment_id})
 
 
+@app.route("/examples", methods=["POST"])
+def create_example():
+    data = request.get_json()
+    missing = [f for f in ("category", "question_summary", "qa_content") if not data.get(f)]
+    if missing:
+        return jsonify({"error": f"missing fields: {missing}"}), 400
+    example_id = sheets.add_example(
+        category=data["category"],
+        question_summary=data["question_summary"],
+        qa_content=data["qa_content"],
+    )
+    return jsonify({"example_id": example_id}), 201
+
+
+@app.route("/examples", methods=["GET"])
+def list_examples():
+    return jsonify(sheets.get_examples())
+
+
 @app.route("/line/webhook", methods=['POST'])
 def webhook():
     signature = request.headers['X-Line-Signature']

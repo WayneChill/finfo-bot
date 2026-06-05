@@ -41,6 +41,16 @@ def _init_db():
             if col not in existing:
                 conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} TEXT")
 
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS examples (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                category         TEXT,
+                question_summary TEXT,
+                qa_content       TEXT,
+                created_at       TEXT
+            )
+        """)
+
 
 _init_db()
 
@@ -89,6 +99,39 @@ def get_approved_tasks() -> list:
             "SELECT * FROM tasks WHERE 狀態 = ?", (STATUS_APPROVED,)
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def add_example(category: str, question_summary: str, qa_content: str) -> int:
+    with _get_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO examples (category, question_summary, qa_content, created_at) VALUES (?, ?, ?, ?)",
+            (category, question_summary, qa_content,
+             datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        )
+        return cur.lastrowid
+
+
+def get_examples() -> list:
+    with _get_conn() as conn:
+        rows = conn.execute("SELECT * FROM examples ORDER BY id DESC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def find_similar_examples(title: str, limit: int = 3) -> list:
+    with _get_conn() as conn:
+        rows = conn.execute("SELECT * FROM examples ORDER BY id DESC").fetchall()
+    examples = [dict(r) for r in rows]
+    if not examples:
+        return []
+
+    def score(ex):
+        haystack = (ex.get("category") or "") + (ex.get("question_summary") or "")
+        return sum(1 for i in range(len(title) - 1) if title[i:i+2] in haystack)
+
+    scored = sorted(((score(ex), ex) for ex in examples), key=lambda x: x[0], reverse=True)
+    if scored[0][0] == 0:
+        return []
+    return [ex for s, ex in scored[:limit] if s > 0]
 
 
 def get_recent_done_tasks(days: int = 7) -> list:
