@@ -201,60 +201,62 @@ def run_finfo_bot():
             all_links = driver.find_elements(By.TAG_NAME, "a")
             print(f"🔗 找到連結數：{len(all_links)}")
 
-            latest_post = None
+            seen_hrefs = set()
+            candidate_posts = []
             for link_el in all_links:
                 href = link_el.get_attribute('href') or ""
                 text = link_el.text.strip()
                 if "/posts/" in href and any(c.isdigit() for c in href) and len(text) > 2:
                     clean_href = href.split('#')[0]
-                    latest_post = (text, clean_href)
-                    break
+                    if clean_href not in seen_hrefs:
+                        seen_hrefs.add(clean_href)
+                        candidate_posts.append((text, clean_href))
+                    if len(candidate_posts) >= 5:
+                        break
 
-            print(f"📄 最新文章：{latest_post}")
+            print(f"📄 找到 {len(candidate_posts)} 篇候選文章")
 
-            if latest_post:
-                title, link = latest_post
-
+            for title, link in candidate_posts:
                 if link in processed_posts:
                     print(f"⏭️ 已處理過，略過：{title}")
-                else:
-                    processed_posts.append(link)
-                    save_processed(processed_posts)
+                    continue
 
-                    if any(kw in title for kw in KEYWORDS):
-                        print(f"🎯 鎖定：{title}，準備佔位！")
+                processed_posts.append(link)
+                save_processed(processed_posts)
 
-                        # ② 送出佔位
-                        comment_id = post_placeholder(driver, link)
+                if any(kw in title for kw in KEYWORDS):
+                    print(f"🎯 鎖定：{title}，準備佔位！")
 
-                        if comment_id:
-                            # ③ 取得文章內容（給 Claude）
-                            post_content = get_post_content(driver, link)
+                    # ② 送出佔位
+                    comment_id = post_placeholder(driver, link)
 
-                            # ④ Claude 生成草稿
-                            print("🤖 Claude 生成草稿中...")
-                            qa_content, full_reply = claude_helper.generate_draft(title, post_content)
-                            print(f"📝 草稿：{qa_content[:80]}...")
+                    if comment_id:
+                        # ③ 取得文章內容（給 Claude）
+                        post_content = get_post_content(driver, link)
 
-                            # ⑤ 透過 Railway API 新增任務
-                            resp = http.post(f"{RAILWAY_API}/tasks", json={
-                                "post_url": link,
-                                "post_title": title,
-                                "comment_id": comment_id,
-                                "draft": full_reply,
-                                "qa_content": qa_content,
-                                "full_reply": full_reply,
-                            }, timeout=10)
-                            resp.raise_for_status()
-                            task_id = resp.json()["task_id"]
-                            print(f"📊 任務已存入 Railway DB：{task_id}")
+                        # ④ Claude 生成草稿
+                        print("🤖 Claude 生成草稿中...")
+                        qa_content, full_reply = claude_helper.generate_draft(title, post_content)
+                        print(f"📝 草稿：{qa_content[:80]}...")
 
-                            print(f"📱 任務已靜默存入，等待早報推播")
+                        # ⑤ 透過 Railway API 新增任務
+                        resp = http.post(f"{RAILWAY_API}/tasks", json={
+                            "post_url": link,
+                            "post_title": title,
+                            "comment_id": comment_id,
+                            "draft": full_reply,
+                            "qa_content": qa_content,
+                            "full_reply": full_reply,
+                        }, timeout=10)
+                        resp.raise_for_status()
+                        task_id = resp.json()["task_id"]
+                        print(f"📊 任務已存入 Railway DB：{task_id}")
+                        print(f"📱 任務已靜默存入，等待早報推播")
 
-                        else:
-                            print("⚠️ 未取得回覆 ID，跳過此篇")
                     else:
-                        print(f"😐 無關鍵字，略過：{title}")
+                        print("⚠️ 未取得回覆 ID，跳過此篇")
+                else:
+                    print(f"😐 無關鍵字，略過：{title}")
 
             if len(processed_posts) > MAX_PROCESSED_CACHE:
                 processed_posts = processed_posts[-MAX_PROCESSED_CACHE:]
