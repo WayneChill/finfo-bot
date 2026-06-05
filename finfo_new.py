@@ -233,15 +233,17 @@ def run_finfo_bot():
 
                             # ④ Claude 生成草稿
                             print("🤖 Claude 生成草稿中...")
-                            draft = claude_helper.generate_draft(title, post_content)
-                            print(f"📝 草稿：{draft[:80]}...")
+                            qa_content, full_reply = claude_helper.generate_draft(title, post_content)
+                            print(f"📝 草稿：{qa_content[:80]}...")
 
                             # ⑤ 透過 Railway API 新增任務
                             resp = http.post(f"{RAILWAY_API}/tasks", json={
                                 "post_url": link,
                                 "post_title": title,
                                 "comment_id": comment_id,
-                                "draft": draft,
+                                "draft": full_reply,
+                                "qa_content": qa_content,
+                                "full_reply": full_reply,
                             }, timeout=10)
                             resp.raise_for_status()
                             task_id = resp.json()["task_id"]

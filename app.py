@@ -44,9 +44,9 @@ def make_task_bubble(task: dict) -> dict:
     task_id = task["ID"]
     title = task.get("文章標題", "")
     post_url = task.get("文章URL", "")
-    draft = task.get("草稿", "")
+    qa = task.get("qa_content") or task.get("草稿", "")
     title_short = title[:40] + ("…" if len(title) > 40 else "")
-    draft_preview = draft[:300] + ("…" if len(draft) > 300 else "")
+    draft_preview = qa[:300] + ("…" if len(qa) > 300 else "")
 
     return {
         "type": "bubble",
@@ -173,6 +173,8 @@ def create_task():
             post_title=data["post_title"],
             comment_id=data["comment_id"],
             draft=data["draft"],
+            qa_content=data.get("qa_content", ""),
+            full_reply=data.get("full_reply", ""),
         )
     except Exception as e:
         return jsonify({"error": str(e)}), 500

@@ -101,13 +101,14 @@ Step 3｜收到專屬規劃建議書
 ━━━━━━━━━━━━━━━━━━"""
 
 
-def generate_draft(post_title: str, post_content: str = "") -> str:
+def generate_draft(post_title: str, post_content: str = "") -> tuple[str, str]:
     user_prompt = f"請針對以下 Finfo 討論區的提問，撰寫問與答 Q&A 區塊的回答內容：\n\n標題：{post_title}"
     if post_content:
         user_prompt += f"\n\n內容：{post_content[:500]}"
 
     qa_content = _call_api(user_prompt)
-    return REPLY_TEMPLATE.format(qa_content=qa_content)
+    full_reply = REPLY_TEMPLATE.format(qa_content=qa_content)
+    return qa_content, full_reply
 
 
 def revise_draft(original_draft: str, instruction: str, post_title: str) -> str:

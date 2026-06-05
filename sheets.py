@@ -31,21 +31,30 @@ def _init_db():
                 回覆ID   TEXT,
                 草稿     TEXT,
                 狀態     TEXT,
-                建立時間 TEXT
+                建立時間 TEXT,
+                qa_content TEXT,
+                full_reply TEXT
             )
         """)
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+        for col in ("qa_content", "full_reply"):
+            if col not in existing:
+                conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} TEXT")
 
 
 _init_db()
 
 
-def add_task(post_url: str, post_title: str, comment_id: str, draft: str) -> str:
+def add_task(post_url: str, post_title: str, comment_id: str, draft: str,
+             qa_content: str = "", full_reply: str = "") -> str:
     task_id = post_url.rstrip("/").split("/")[-1]
     with _get_conn() as conn:
         conn.execute(
-            "INSERT OR IGNORE INTO tasks VALUES (?, ?, ?, ?, ?, ?, ?)",
+            """INSERT OR IGNORE INTO tasks
+               (ID, 文章URL, 文章標題, 回覆ID, 草稿, 狀態, 建立時間, qa_content, full_reply)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (task_id, post_url, post_title, comment_id, draft, STATUS_PENDING,
-             datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+             datetime.now().strftime("%Y-%m-%d %H:%M:%S"), qa_content, full_reply)
         )
     return task_id
 
