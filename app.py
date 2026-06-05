@@ -96,6 +96,45 @@ def make_task_bubble(task: dict) -> dict:
     }
 
 
+def make_task_list_bubble(tasks: list) -> dict:
+    rows = []
+    for i, task in enumerate(tasks):
+        if i > 0:
+            rows.append({"type": "separator"})
+        task_id = task["ID"]
+        title = task.get("文章標題", "")
+        title_short = title[:22] + ("…" if len(title) > 22 else "")
+        rows.append({
+            "type": "box", "layout": "horizontal", "alignItems": "center",
+            "contents": [
+                {"type": "text", "text": f"• #{task_id}　{title_short}",
+                 "flex": 5, "wrap": True, "size": "sm", "color": "#2C3E50"},
+                {"type": "button", "style": "link", "height": "sm", "flex": 1,
+                 "action": {"type": "postback", "label": "查看",
+                            "data": f"view_{task_id}", "displayText": f"查看{task_id}"}}
+            ]
+        })
+    return {
+        "type": "bubble",
+        "size": "giga",
+        "styles": {
+            "header": {"backgroundColor": "#EBF5FB"},
+            "body":   {"backgroundColor": "#FDFEFE"}
+        },
+        "header": {
+            "type": "box", "layout": "vertical",
+            "contents": [
+                {"type": "text", "text": f"📋 待審核任務（共 {len(tasks)} 筆）",
+                 "weight": "bold", "size": "md", "color": "#1A252F"}
+            ]
+        },
+        "body": {
+            "type": "box", "layout": "vertical", "spacing": "sm",
+            "contents": rows
+        }
+    }
+
+
 def push_task_card(task: dict):
     bubble = make_task_bubble(task)
     line_bot_api.push_message(
@@ -132,9 +171,11 @@ def send_progress():
     if not pending:
         push_text("目前沒有待審核任務 🎉")
         return
-    push_text(f"📋 共 {len(pending)} 筆待審核任務：")
-    for task in pending:
-        push_task_card(task)
+    bubble = make_task_list_bubble(pending)
+    line_bot_api.push_message(
+        LINE_USER_ID,
+        FlexSendMessage(alt_text=f"📋 待審核任務（共 {len(pending)} 筆）", contents=bubble)
+    )
 
 
 def send_history():
@@ -247,6 +288,13 @@ def handle_message(event):
         send_progress()
     elif text == "歷史":
         send_history()
+    elif text.startswith("查看"):
+        task_id = text.replace("查看", "").strip()
+        task = sheets.get_task(task_id)
+        if task:
+            push_task_card(task)
+        else:
+            push_text(f"❌ 找不到任務 {task_id}")
     elif text.startswith("確認"):
         handle_approve(text.replace("確認", "").strip())
     elif text.startswith("修改"):
@@ -272,6 +320,13 @@ def handle_postback(event):
         handle_edit_request(data[5:], "")
     elif data.startswith("skip_"):
         handle_skip(data[5:])
+    elif data.startswith("view_"):
+        task_id = data[5:]
+        task = sheets.get_task(task_id)
+        if task:
+            push_task_card(task)
+        else:
+            push_text(f"❌ 找不到任務 {task_id}")
 
 
 # ===================================================
