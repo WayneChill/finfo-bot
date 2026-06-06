@@ -1,10 +1,24 @@
 import time
-import pyperclip
+import html as html_lib
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+
+
+def _to_trix_html(text: str) -> str:
+    """Convert plain text to Trix-compatible HTML.
+
+    \n\n → new <div> block (paragraph break)
+    \n   → <br> (soft line break within a block)
+    """
+    paragraphs = text.split('\n\n')
+    parts = []
+    for para in paragraphs:
+        escaped = html_lib.escape(para).replace('\n', '<br>')
+        parts.append(f'<div>{escaped}</div>')
+    return ''.join(parts)
 
 
 def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bool:
@@ -26,21 +40,18 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
         trix = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "trix-editor.bg-white"))
         )
-        trix.click()
         time.sleep(0.3)
 
-        # 4. 全選
-        actions = ActionChains(driver)
-        actions.key_down(Keys.CONTROL).send_keys('a').key_up(Keys.CONTROL).perform()
-        time.sleep(0.5)
-
-        # 5. 貼上
-        pyperclip.copy(new_content)
-        actions = ActionChains(driver)
-        actions.key_down(Keys.CONTROL).send_keys('v').key_up(Keys.CONTROL).perform()
+        # 4. 用 loadHTML() 注入內容，確保 \n 正確轉為段落與換行
+        trix_html = _to_trix_html(new_content)
+        driver.execute_script(
+            "arguments[0].editor.loadHTML(arguments[1]);",
+            trix,
+            trix_html
+        )
         time.sleep(1)
 
-        # 6. 送出：focus trix-editor，TAB×3，ENTER
+        # 5. 送出：focus trix-editor，TAB×3，ENTER
         trix.click()
         time.sleep(0.3)
         actions = ActionChains(driver)
