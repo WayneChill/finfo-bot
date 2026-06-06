@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 import os
+import traceback
 import requests
 import sheets
 
@@ -122,16 +123,33 @@ def generate_draft(post_title: str, post_content: str = "") -> tuple[str, str]:
     return qa_content, full_reply
 
 
+def extract_qa(full_reply: str) -> str:
+    """從完整回覆模板中抽出 Q&A 區塊內容。"""
+    sep = "━━━━━━━━━━━━━━━━━━"
+    marker = "❓問與答 Q&A"
+    try:
+        idx = full_reply.index(marker)
+        after = full_reply[idx + len(marker):]
+        i1 = after.index(sep)
+        body = after[i1 + len(sep):].lstrip("\n")
+        i2 = body.index(sep)
+        return body[:i2].strip()
+    except ValueError:
+        return full_reply
+
+
 def revise_draft(original_draft: str, instruction: str, post_title: str) -> str:
-    user_prompt = f"""原文章標題：{post_title}
+    # original_draft 可能是完整模板，只取 Q&A 段落避免 prompt 過長
+    qa_only = extract_qa(original_draft) if "❓問與答 Q&A" in original_draft else original_draft
 
-原始草稿：
-{original_draft}
-
-修改意見：{instruction}
-
-請根據修改意見重新撰寫回覆，保留原本的良好部分，針對意見做調整。"""
-
+    user_prompt = (
+        f"原文章標題：{post_title}\n\n"
+        f"原始 Q&A 草稿：\n{qa_only}\n\n"
+        f"修改意見：{instruction}\n\n"
+        f"請根據修改意見重新撰寫問與答 Q&A 內容，保留良好部分，針對意見調整。"
+        f"只輸出 Q&A 內容本身，不要加框架。"
+    )
+    print(f"[revise_draft] prompt length: {len(user_prompt)} chars")
     return _call_api(user_prompt)
 
 
@@ -153,9 +171,18 @@ def _call_api(user_prompt: str) -> str:
 
     try:
         response = requests.post(API_URL, headers=headers, json=payload, timeout=30)
+        print(f"[Claude API] status={response.status_code}")
+        if not response.ok:
+            print(f"[Claude API] error body: {response.text}")
         response.raise_for_status()
         data = response.json()
         return data["content"][0]["text"].strip()
+    except requests.exceptions.HTTPError as e:
+        print(f"❌ Claude API HTTP error: {e}")
+        print(f"   response body: {e.response.text if e.response is not None else 'N/A'}")
+        traceback.print_exc()
+        return "（草稿生成失敗，請手動編輯）"
     except Exception as e:
-        print(f"❌ Claude API 呼叫失敗：{e}")
+        print(f"❌ Claude API 呼叫失敗：{type(e).__name__}: {e}")
+        traceback.print_exc()
         return "（草稿生成失敗，請手動編輯）"

@@ -80,9 +80,15 @@ def update_status(task_id: str, status: str):
         conn.execute("UPDATE tasks SET 狀態 = ? WHERE ID = ?", (status, task_id))
 
 
-def update_draft(task_id: str, new_draft: str):
+def update_draft(task_id: str, new_draft: str, qa_content: str = None):
     with _get_conn() as conn:
-        conn.execute("UPDATE tasks SET 草稿 = ? WHERE ID = ?", (new_draft, task_id))
+        if qa_content is not None:
+            conn.execute(
+                "UPDATE tasks SET 草稿 = ?, qa_content = ?, full_reply = ? WHERE ID = ?",
+                (new_draft, qa_content, new_draft, task_id)
+            )
+        else:
+            conn.execute("UPDATE tasks SET 草稿 = ? WHERE ID = ?", (new_draft, task_id))
 
 
 def get_pending_tasks() -> list:
