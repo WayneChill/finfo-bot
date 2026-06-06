@@ -112,17 +112,27 @@ def make_task_bubble(task: dict) -> dict:
 
 
 def make_task_list_bubble(tasks: list) -> dict:
+    pending_n = sum(1 for t in tasks if t.get("狀態") == sheets.STATUS_PENDING)
+    failed_n  = sum(1 for t in tasks if t.get("狀態") == sheets.STATUS_FAILED)
+    parts = []
+    if pending_n:
+        parts.append(f"待審核 {pending_n}")
+    if failed_n:
+        parts.append(f"失敗 {failed_n}")
+    header_text = f"📋 任務總覽（{'、'.join(parts)}）"
+
     rows = []
     for i, task in enumerate(tasks):
         if i > 0:
             rows.append({"type": "separator"})
         task_id = task["ID"]
         title = task.get("文章標題", "")
-        title_short = title[:22] + ("…" if len(title) > 22 else "")
+        title_short = title[:20] + ("…" if len(title) > 20 else "")
+        badge = "⚠️ " if task.get("狀態") == sheets.STATUS_FAILED else ""
         rows.append({
             "type": "box", "layout": "horizontal", "alignItems": "center",
             "contents": [
-                {"type": "text", "text": f"• #{task_id}　{title_short}",
+                {"type": "text", "text": f"{badge}#{task_id}　{title_short}",
                  "flex": 5, "wrap": True, "size": "sm", "color": "#2C3E50"},
                 {"type": "button", "style": "link", "height": "sm", "flex": 1,
                  "action": {"type": "postback", "label": "查看",
@@ -139,7 +149,7 @@ def make_task_list_bubble(tasks: list) -> dict:
         "header": {
             "type": "box", "layout": "vertical",
             "contents": [
-                {"type": "text", "text": f"📋 待審核任務（共 {len(tasks)} 筆）",
+                {"type": "text", "text": header_text,
                  "weight": "bold", "size": "md", "color": "#1A252F"}
             ]
         },
@@ -189,7 +199,7 @@ def send_progress():
     bubble = make_task_list_bubble(pending)
     line_bot_api.push_message(
         LINE_USER_ID,
-        FlexSendMessage(alt_text=f"📋 待審核任務（共 {len(pending)} 筆）", contents=bubble)
+        FlexSendMessage(alt_text=f"📋 任務總覽（共 {len(pending)} 筆）", contents=bubble)
     )
 
 
