@@ -402,15 +402,16 @@ def handle_edit_request(task_id: str, instruction: str):
     pending_edit[LINE_USER_ID] = task_id
     if instruction:
         push_text("✏️ 正在根據你的意見修改草稿...")
-        new_draft = claude_helper.revise_draft(
+        new_qa = claude_helper.revise_draft(
             original_draft=task["草稿"],
             instruction=instruction,
             post_title=task["文章標題"]
         )
-        sheets.update_draft(task_id, new_draft)
+        new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=new_qa)
+        sheets.update_draft(task_id, new_full)
         sheets.update_status(task_id, sheets.STATUS_PENDING)
         pending_edit.pop(LINE_USER_ID, None)
-        push_text(f"✏️ 修改後草稿：\n━━━━━━━━━━━━━━\n{new_draft}\n━━━━━━━━━━━━━━\n確認{task_id} ／ 修改{task_id} [繼續修改]")
+        push_text(f"✏️ 修改後草稿：\n━━━━━━━━━━━━━━\n{new_qa}\n━━━━━━━━━━━━━━\n確認{task_id} ／ 修改{task_id} [繼續修改]")
     else:
         push_text(f"請說明要怎麼修改（任務 {task_id}）：")
 
@@ -421,15 +422,16 @@ def handle_edit_reply(task_id: str, instruction: str):
         pending_edit.pop(LINE_USER_ID, None)
         return
     push_text("✏️ 修改中...")
-    new_draft = claude_helper.revise_draft(
+    new_qa = claude_helper.revise_draft(
         original_draft=task["草稿"],
         instruction=instruction,
         post_title=task["文章標題"]
     )
-    sheets.update_draft(task_id, new_draft)
+    new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=new_qa)
+    sheets.update_draft(task_id, new_full)
     sheets.update_status(task_id, sheets.STATUS_PENDING)
     pending_edit.pop(LINE_USER_ID, None)
-    push_text(f"✏️ 修改後草稿：\n━━━━━━━━━━━━━━\n{new_draft}\n━━━━━━━━━━━━━━\n確認{task_id} ／ 修改{task_id} [繼續修改]")
+    push_text(f"✏️ 修改後草稿：\n━━━━━━━━━━━━━━\n{new_qa}\n━━━━━━━━━━━━━━\n確認{task_id} ／ 修改{task_id} [繼續修改]")
 
 
 def handle_skip(task_id: str):
