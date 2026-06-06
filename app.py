@@ -55,13 +55,16 @@ def _extract_qa(full_reply: str) -> str:
         return full_reply
 
 
+FLEX_TEXT_LIMIT = 2000
+
+
 def make_task_bubble(task: dict) -> dict:
     task_id = task["ID"]
     title = task.get("文章標題", "")
     post_url = task.get("文章URL", "")
     qa_raw = task.get("qa_content") or _extract_qa(task.get("草稿", ""))
     title_short = title[:40] + ("…" if len(title) > 40 else "")
-    draft_preview = qa_raw[:300] + ("…" if len(qa_raw) > 300 else "")
+    draft_preview = qa_raw[:FLEX_TEXT_LIMIT]
 
     return {
         "type": "bubble",
@@ -161,11 +164,14 @@ def make_task_list_bubble(tasks: list) -> dict:
 
 
 def push_task_card(task: dict):
+    qa_raw = task.get("qa_content") or _extract_qa(task.get("草稿", ""))
     bubble = make_task_bubble(task)
-    line_bot_api.push_message(
-        LINE_USER_ID,
-        FlexSendMessage(alt_text=f"任務 #{task['ID']} 請審核", contents=bubble)
-    )
+    messages = [FlexSendMessage(alt_text=f"任務 #{task['ID']} 請審核", contents=bubble)]
+    if len(qa_raw) > FLEX_TEXT_LIMIT:
+        messages.append(TextSendMessage(
+            text=f"📄 完整草稿 #{task['ID']}：\n\n{qa_raw}"
+        ))
+    line_bot_api.push_message(LINE_USER_ID, messages)
 
 
 # ===================================================
