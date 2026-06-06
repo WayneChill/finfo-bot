@@ -40,7 +40,19 @@ def push_text(text: str):
 # Flex 卡片組裝
 # ===================================================
 
-_extract_qa = claude_helper.extract_qa
+def _extract_qa(full_reply: str) -> str:
+    """從完整回覆模板中抽出 Q&A 區塊內容（用於舊資料 fallback）。"""
+    sep = "━━━━━━━━━━━━━━━━━━"
+    marker = "❓問與答 Q&A"
+    try:
+        idx = full_reply.index(marker)
+        after = full_reply[idx + len(marker):]
+        i1 = after.index(sep)
+        body = after[i1 + len(sep):].lstrip("\n")
+        i2 = body.index(sep)
+        return body[:i2].strip()
+    except ValueError:
+        return full_reply
 
 
 FLEX_TEXT_LIMIT = 2000
@@ -390,16 +402,15 @@ def handle_edit_request(task_id: str, instruction: str):
     pending_edit[LINE_USER_ID] = task_id
     if instruction:
         push_text("✏️ 正在根據你的意見修改草稿...")
-        new_qa = claude_helper.revise_draft(
+        new_draft = claude_helper.revise_draft(
             original_draft=task["草稿"],
             instruction=instruction,
             post_title=task["文章標題"]
         )
-        new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=new_qa)
-        sheets.update_draft(task_id, new_full, qa_content=new_qa)
+        sheets.update_draft(task_id, new_draft)
         sheets.update_status(task_id, sheets.STATUS_PENDING)
         pending_edit.pop(LINE_USER_ID, None)
-        push_text(f"✏️ 修改後草稿：\n━━━━━━━━━━━━━━\n{new_qa}\n━━━━━━━━━━━━━━\n確認{task_id} ／ 修改{task_id} [繼續修改]")
+        push_text(f"✏️ 修改後草稿：\n━━━━━━━━━━━━━━\n{new_draft}\n━━━━━━━━━━━━━━\n確認{task_id} ／ 修改{task_id} [繼續修改]")
     else:
         push_text(f"請說明要怎麼修改（任務 {task_id}）：")
 
@@ -410,16 +421,15 @@ def handle_edit_reply(task_id: str, instruction: str):
         pending_edit.pop(LINE_USER_ID, None)
         return
     push_text("✏️ 修改中...")
-    new_qa = claude_helper.revise_draft(
+    new_draft = claude_helper.revise_draft(
         original_draft=task["草稿"],
         instruction=instruction,
         post_title=task["文章標題"]
     )
-    new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=new_qa)
-    sheets.update_draft(task_id, new_full, qa_content=new_qa)
+    sheets.update_draft(task_id, new_draft)
     sheets.update_status(task_id, sheets.STATUS_PENDING)
     pending_edit.pop(LINE_USER_ID, None)
-    push_text(f"✏️ 修改後草稿：\n━━━━━━━━━━━━━━\n{new_qa}\n━━━━━━━━━━━━━━\n確認{task_id} ／ 修改{task_id} [繼續修改]")
+    push_text(f"✏️ 修改後草稿：\n━━━━━━━━━━━━━━\n{new_draft}\n━━━━━━━━━━━━━━\n確認{task_id} ／ 修改{task_id} [繼續修改]")
 
 
 def handle_skip(task_id: str):
