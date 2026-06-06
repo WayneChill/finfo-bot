@@ -221,42 +221,50 @@ def run_finfo_bot():
                     print(f"⏭️ 已處理過，略過：{title}")
                     continue
 
-                processed_posts.append(link)
-                save_processed(processed_posts)
+                if not any(kw in title for kw in KEYWORDS):
+                    processed_posts.append(link)
+                    save_processed(processed_posts)
+                    print(f"😐 無關鍵字，略過：{title}")
+                    continue
 
-                if any(kw in title for kw in KEYWORDS):
+                # 有關鍵字，進行完整處理流程，每篇獨立 try/except
+                try:
                     print(f"🎯 鎖定：{title}，準備佔位！")
 
-                    # ② 送出佔位
+                    # ② 送出佔位（佔位前先記錄，避免重複卡位）
+                    processed_posts.append(link)
+                    save_processed(processed_posts)
+
                     comment_id = post_placeholder(driver, link)
 
-                    if comment_id:
-                        # ③ 取得文章內容（給 Claude）
-                        post_content = get_post_content(driver, link)
-
-                        # ④ Claude 生成草稿
-                        print("🤖 Claude 生成草稿中...")
-                        qa_content, full_reply = claude_helper.generate_draft(title, post_content)
-                        print(f"📝 草稿：{qa_content[:80]}...")
-
-                        # ⑤ 透過 Railway API 新增任務
-                        resp = http.post(f"{RAILWAY_API}/tasks", json={
-                            "post_url": link,
-                            "post_title": title,
-                            "comment_id": comment_id,
-                            "draft": full_reply,
-                            "qa_content": qa_content,
-                            "full_reply": full_reply,
-                        }, timeout=10)
-                        resp.raise_for_status()
-                        task_id = resp.json()["task_id"]
-                        print(f"📊 任務已存入 Railway DB：{task_id}")
-                        print(f"📱 任務已靜默存入，等待早報推播")
-
-                    else:
+                    if not comment_id:
                         print("⚠️ 未取得回覆 ID，跳過此篇")
-                else:
-                    print(f"😐 無關鍵字，略過：{title}")
+                        continue
+
+                    # ③ 取得文章內容（給 Claude）
+                    post_content = get_post_content(driver, link)
+
+                    # ④ Claude 生成草稿
+                    print("🤖 Claude 生成草稿中...")
+                    qa_content, full_reply = claude_helper.generate_draft(title, post_content)
+                    print(f"📝 草稿：{qa_content[:80]}...")
+
+                    # ⑤ 透過 Railway API 新增任務
+                    resp = http.post(f"{RAILWAY_API}/tasks", json={
+                        "post_url": link,
+                        "post_title": title,
+                        "comment_id": comment_id,
+                        "draft": full_reply,
+                        "qa_content": qa_content,
+                        "full_reply": full_reply,
+                    }, timeout=15)
+                    resp.raise_for_status()
+                    task_id = resp.json()["task_id"]
+                    print(f"📊 任務已存入 Railway DB：{task_id}")
+                    print(f"📱 任務已靜默存入，等待早報推播")
+
+                except Exception as post_err:
+                    print(f"⚠️ 處理文章失敗 [{title[:30]}]：{post_err}，繼續下一篇")
 
             if len(processed_posts) > MAX_PROCESSED_CACHE:
                 processed_posts = processed_posts[-MAX_PROCESSED_CACHE:]
