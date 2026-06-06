@@ -1,3 +1,4 @@
+import re
 import time
 import pyperclip
 from selenium.webdriver.common.by import By
@@ -38,8 +39,10 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
         time.sleep(0.3)
 
         # 5. pyperclip 複製 → Ctrl+V 貼上
-        # trix-editor 貼入時會壓縮一層換行，\n\n → \n\n\n 補回空行效果
-        pyperclip.copy(new_content.replace('\n\n', '\n\n\n'))
+        # trix-editor 貼入時會壓縮一層換行；把尚未是三個換行的 \n\n 擴展為 \n\n\n
+        # 用 regex 避免模板裡已有的 \n\n\n 被二次疊加成 \n\n\n\n
+        padded = re.sub(r'\n\n(?!\n)', '\n\n\n', new_content)
+        pyperclip.copy(padded)
         actions = ActionChains(driver)
         actions.key_down(Keys.CONTROL).send_keys('v').key_up(Keys.CONTROL).perform()
         time.sleep(1.2)
