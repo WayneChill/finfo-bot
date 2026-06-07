@@ -36,7 +36,13 @@ pending_edit = {}
 
 def push_text(text: str):
     """主動推播純文字（消耗額度）—— 只用於早報、巡邏通知等無 reply token 的場合。"""
-    line_bot_api.push_message(LINE_USER_ID, TextSendMessage(text=text))
+    try:
+        line_bot_api.push_message(LINE_USER_ID, TextSendMessage(text=text))
+    except LineBotApiError as e:
+        if e.status_code == 429:
+            print(f"⚠️ LINE 推播月配額已用完，跳過通知：{text[:40]}…")
+        else:
+            raise
 
 
 def _send(reply_token, messages):
@@ -47,7 +53,13 @@ def _send(reply_token, messages):
     if reply_token:
         line_bot_api.reply_message(reply_token, msg)
     else:
-        line_bot_api.push_message(LINE_USER_ID, msg)
+        try:
+            line_bot_api.push_message(LINE_USER_ID, msg)
+        except LineBotApiError as e:
+            if e.status_code == 429:
+                print("⚠️ LINE 推播月配額已用完，跳過 fallback 通知")
+            else:
+                raise
 
 
 # ===================================================
