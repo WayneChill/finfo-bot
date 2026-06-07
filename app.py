@@ -31,11 +31,23 @@ pending_edit = {}
 
 
 # ===================================================
-# 工具：推播純文字
+# 工具：推播 / 回覆
 # ===================================================
 
 def push_text(text: str):
+    """主動推播純文字（消耗額度）—— 只用於早報、巡邏通知等無 reply token 的場合。"""
     line_bot_api.push_message(LINE_USER_ID, TextSendMessage(text=text))
+
+
+def _send(reply_token, messages):
+    """有 reply_token 時用 reply_message（免費），否則 fallback 到 push_message。"""
+    if not isinstance(messages, list):
+        messages = [messages]
+    msg = messages if len(messages) > 1 else messages[0]
+    if reply_token:
+        line_bot_api.reply_message(reply_token, msg)
+    else:
+        line_bot_api.push_message(LINE_USER_ID, msg)
 
 
 # ===================================================
@@ -165,7 +177,7 @@ def make_task_list_bubble(tasks: list) -> dict:
     }
 
 
-def push_task_card(task: dict):
+def push_task_card(task: dict, reply_token=None):
     qa_raw = task.get("qa_content") or _extract_qa(task.get("草稿", ""))
     bubble = make_task_bubble(task)
     messages = [FlexSendMessage(alt_text=f"任務 #{task['ID']} 請審核", contents=bubble)]
@@ -173,7 +185,7 @@ def push_task_card(task: dict):
         messages.append(TextSendMessage(
             text=f"📄 完整草稿 #{task['ID']}：\n\n{qa_raw}"
         ))
-    line_bot_api.push_message(LINE_USER_ID, messages)
+    _send(reply_token, messages)
 
 
 # ===================================================
@@ -185,10 +197,11 @@ def push_review(task_id: str, post_title: str, post_url: str, draft: str):
 
 
 # ===================================================
-# 早報 & 查詢
+# 早報 & 查詢（早報用 push_message，查詢用 reply_message）
 # ===================================================
 
 def send_morning_report():
+    """早報：系統主動推播，消耗額度（無 reply token）。"""
     pending = sheets.get_pending_tasks()
     if not pending:
         push_text("☀️ 早安！目前沒有待審核任務。")
@@ -196,29 +209,28 @@ def send_morning_report():
     push_text(f"☀️ 早安！目前有 {len(pending)} 筆待審核任務，輸入「進度」查看。")
 
 
-def send_progress():
+def send_progress(reply_token=None):
     pending = sheets.get_pending_tasks()
     if not pending:
-        push_text("目前沒有待審核任務 🎉")
+        _send(reply_token, TextSendMessage(text="目前沒有待審核任務 🎉"))
         return
     bubble = make_task_list_bubble(pending)
-    line_bot_api.push_message(
-        LINE_USER_ID,
-        FlexSendMessage(alt_text=f"📋 任務總覽（共 {len(pending)} 筆）", contents=bubble)
-    )
+    _send(reply_token, FlexSendMessage(
+        alt_text=f"📋 任務總覽（共 {len(pending)} 筆）", contents=bubble
+    ))
 
 
-def send_history():
+def send_history(reply_token=None):
     done_tasks = sheets.get_recent_done_tasks(days=7)
     if not done_tasks:
-        push_text("近 7 天沒有已處理的任務。")
+        _send(reply_token, TextSendMessage(text="近 7 天沒有已處理的任務。"))
         return
     lines = [f"📊 近 7 天已處理（共 {len(done_tasks)} 筆）：\n"]
     for t in done_tasks:
         icon = "✅" if t["狀態"] == sheets.STATUS_DONE else "⏭️"
         title_short = t.get("文章標題", "")[:20]
         lines.append(f"{icon} #{t['ID']}  {title_short}  — {t['狀態']}")
-    push_text("\n".join(lines))
+    _send(reply_token, TextSendMessage(text="\n".join(lines)))
 
 
 # ===================================================
@@ -336,75 +348,78 @@ def webhook():
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     text = event.message.text.strip()
+    rt = event.reply_token  # reply_token，免費使用
 
     if text == "進度":
-        send_progress()
+        send_progress(rt)
     elif text == "歷史":
-        send_history()
+        send_history(rt)
     elif text.startswith("查看"):
         task_id = text.replace("查看", "").strip()
         task = sheets.get_task(task_id)
         if task:
-            push_task_card(task)
+            push_task_card(task, rt)
         else:
-            push_text(f"❌ 找不到任務 {task_id}")
+            _send(rt, TextSendMessage(text=f"❌ 找不到任務 {task_id}"))
     elif text.startswith("確認"):
-        handle_approve(text.replace("確認", "").strip())
+        handle_approve(text.replace("確認", "").strip(), rt)
     elif text.startswith("修改"):
         parts = text.replace("修改", "").strip().split(" ", 1)
-        handle_edit_request(parts[0], parts[1] if len(parts) > 1 else "")
+        handle_edit_request(parts[0], parts[1] if len(parts) > 1 else "", rt)
     elif text.startswith("略過"):
-        handle_skip(text.replace("略過", "").strip())
+        handle_skip(text.replace("略過", "").strip(), rt)
     elif task_id := pending_edit.get(LINE_USER_ID):
-        handle_edit_reply(task_id, text)
+        handle_edit_reply(task_id, text, rt)
     else:
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(text="指令：\n進度 — 查看待審核任務\n歷史 — 近7天已完成\n確認{ID} / 修改{ID} {意見} / 略過{ID}")
-        )
+        _send(rt, TextSendMessage(
+            text="指令：\n進度 — 查看待審核任務\n歷史 — 近7天已完成\n確認{ID} / 修改{ID} {意見} / 略過{ID}"
+        ))
 
 
 @handler.add(PostbackEvent)
 def handle_postback(event):
     data = event.postback.data
+    rt = event.reply_token  # reply_token，免費使用
+
     if data.startswith("confirm_"):
-        handle_approve(data[8:])
+        handle_approve(data[8:], rt)
     elif data.startswith("edit_"):
-        handle_edit_request(data[5:], "")
+        handle_edit_request(data[5:], "", rt)
     elif data.startswith("skip_"):
-        handle_skip(data[5:])
+        handle_skip(data[5:], rt)
     elif data.startswith("view_"):
         task_id = data[5:]
         task = sheets.get_task(task_id)
         if task:
-            push_task_card(task)
+            push_task_card(task, rt)
         else:
-            push_text(f"❌ 找不到任務 {task_id}")
+            _send(rt, TextSendMessage(text=f"❌ 找不到任務 {task_id}"))
 
 
 # ===================================================
 # 任務動作
 # ===================================================
 
-def handle_approve(task_id: str):
+def handle_approve(task_id: str, reply_token=None):
     task = sheets.get_task(task_id)
     if not task:
-        push_text(f"❌ 找不到任務 {task_id}")
+        _send(reply_token, TextSendMessage(text=f"❌ 找不到任務 {task_id}"))
         return
     sheets.update_status(task_id, sheets.STATUS_APPROVED)
-    push_text(f"✅ 任務 {task_id} 已確認，Bot 即將編輯回覆...")
+    _send(reply_token, TextSendMessage(text=f"✅ 任務 {task_id} 已確認，Bot 即將編輯回覆..."))
     trigger_edit(task_id)
 
 
-def handle_edit_request(task_id: str, instruction: str):
+def handle_edit_request(task_id: str, instruction: str, reply_token=None):
     task = sheets.get_task(task_id)
     if not task:
-        push_text(f"❌ 找不到任務 {task_id}")
+        _send(reply_token, TextSendMessage(text=f"❌ 找不到任務 {task_id}"))
         return
     sheets.update_status(task_id, sheets.STATUS_EDITING)
     pending_edit[LINE_USER_ID] = task_id
     if instruction:
-        push_text("✏️ 正在根據你的意見修改草稿...")
+        # 先 reply 告知修改中（免費），結果再 push（消耗 1 則，因 reply token 已用完）
+        _send(reply_token, TextSendMessage(text="✏️ 正在根據你的意見修改草稿..."))
         new_qa = claude_helper.revise_draft(
             original_draft=task["草稿"],
             instruction=instruction,
@@ -416,15 +431,16 @@ def handle_edit_request(task_id: str, instruction: str):
         pending_edit.pop(LINE_USER_ID, None)
         push_text(f"✏️ 修改後草稿：\n━━━━━━━━━━━━━━\n{new_qa}\n━━━━━━━━━━━━━━\n確認{task_id} ／ 修改{task_id} [繼續修改]")
     else:
-        push_text(f"請說明要怎麼修改（任務 {task_id}）：")
+        _send(reply_token, TextSendMessage(text=f"請說明要怎麼修改（任務 {task_id}）："))
 
 
-def handle_edit_reply(task_id: str, instruction: str):
+def handle_edit_reply(task_id: str, instruction: str, reply_token=None):
     task = sheets.get_task(task_id)
     if not task:
         pending_edit.pop(LINE_USER_ID, None)
         return
-    push_text("✏️ 修改中...")
+    # 先 reply 告知修改中（免費），結果再 push（消耗 1 則）
+    _send(reply_token, TextSendMessage(text="✏️ 修改中..."))
     new_qa = claude_helper.revise_draft(
         original_draft=task["草稿"],
         instruction=instruction,
@@ -437,9 +453,9 @@ def handle_edit_reply(task_id: str, instruction: str):
     push_text(f"✏️ 修改後草稿：\n━━━━━━━━━━━━━━\n{new_qa}\n━━━━━━━━━━━━━━\n確認{task_id} ／ 修改{task_id} [繼續修改]")
 
 
-def handle_skip(task_id: str):
+def handle_skip(task_id: str, reply_token=None):
     sheets.update_status(task_id, sheets.STATUS_REJECTED)
-    push_text(f"⏭️ 任務 {task_id} 已略過。")
+    _send(reply_token, TextSendMessage(text=f"⏭️ 任務 {task_id} 已略過。"))
 
 
 # ===================================================
