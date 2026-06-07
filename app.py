@@ -191,10 +191,7 @@ def send_morning_report():
     if not pending:
         push_text("☀️ 早安！目前沒有待審核任務。")
         return
-
-    push_text(f"☀️ 早安！目前共有 {len(pending)} 筆待審核任務：")
-    for task in pending:
-        push_task_card(task)
+    push_text(f"☀️ 早安！目前有 {len(pending)} 筆待審核任務，輸入「進度」查看。")
 
 
 def send_progress():
