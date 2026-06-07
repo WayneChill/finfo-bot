@@ -2,6 +2,8 @@ from dotenv import load_dotenv
 load_dotenv()
 import os
 import threading
+import warnings
+warnings.filterwarnings('ignore', category=DeprecationWarning)
 from flask import Flask, request, abort, jsonify
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -320,6 +322,10 @@ def webhook():
         handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
+    except Exception as e:
+        import traceback
+        print(f"❌ Webhook 處理錯誤：{e}")
+        print(traceback.format_exc())
     return 'OK'
 
 
