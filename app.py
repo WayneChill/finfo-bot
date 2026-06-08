@@ -6,7 +6,7 @@ import warnings
 warnings.filterwarnings('ignore', category=DeprecationWarning)
 from flask import Flask, request, abort, jsonify
 from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
+from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage,
     FlexSendMessage, PostbackEvent
