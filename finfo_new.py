@@ -211,8 +211,6 @@ def run_finfo_bot():
                     if clean_href not in seen_hrefs:
                         seen_hrefs.add(clean_href)
                         candidate_posts.append((text, clean_href))
-                    if len(candidate_posts) >= 5:
-                        break
 
             print(f"📄 找到 {len(candidate_posts)} 篇候選文章")
 

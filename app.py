@@ -140,27 +140,18 @@ def make_task_bubble(task: dict) -> dict:
     }
 
 
-def make_task_list_bubble(tasks: list) -> dict:
-    pending_n = sum(1 for t in tasks if t.get("狀態") == sheets.STATUS_PENDING)
-    failed_n  = sum(1 for t in tasks if t.get("狀態") == sheets.STATUS_FAILED)
-    parts = []
-    if pending_n:
-        parts.append(f"待審核 {pending_n}")
-    if failed_n:
-        parts.append(f"失敗 {failed_n}")
-    header_text = f"📋 任務總覽（{'、'.join(parts)}）"
+PAGE_SIZE = 7
 
-    PAGE = 7
-    shown = tasks[:PAGE]
-    hidden = len(tasks) - PAGE
 
+def _make_page_bubble(tasks: list, page: int, total_pages: int, header_text: str) -> dict:
     rows = []
-    for i, task in enumerate(shown):
+    for i, task in enumerate(tasks):
         if i > 0:
             rows.append({"type": "separator"})
         task_id = task["ID"]
-        title = task.get("文章標題", "")
-        title_short = title[:20] + ("…" if len(title) > 20 else "")
+        title_short = task.get("文章標題", "")[:20]
+        if len(task.get("文章標題", "")) > 20:
+            title_short += "…"
         badge = "⚠️ " if task.get("狀態") == sheets.STATUS_FAILED else ""
         rows.append({
             "type": "box", "layout": "horizontal", "alignItems": "center",
@@ -172,10 +163,7 @@ def make_task_list_bubble(tasks: list) -> dict:
                             "data": f"view_{task_id}", "displayText": f"查看{task_id}"}}
             ]
         })
-    if hidden > 0:
-        rows.append({"type": "separator"})
-        rows.append({"type": "text", "text": f"…還有 {hidden} 筆，輸入「確認ID」直接操作",
-                     "size": "xs", "color": "#888888", "margin": "sm"})
+    page_label = f"{header_text}　{page}/{total_pages}" if total_pages > 1 else header_text
     return {
         "type": "bubble",
         "size": "giga",
@@ -186,7 +174,7 @@ def make_task_list_bubble(tasks: list) -> dict:
         "header": {
             "type": "box", "layout": "vertical",
             "contents": [
-                {"type": "text", "text": header_text,
+                {"type": "text", "text": page_label,
                  "weight": "bold", "size": "md", "color": "#1A252F"}
             ]
         },
@@ -195,6 +183,27 @@ def make_task_list_bubble(tasks: list) -> dict:
             "contents": rows
         }
     }
+
+
+def make_task_list_carousel(tasks: list) -> dict:
+    pending_n = sum(1 for t in tasks if t.get("狀態") == sheets.STATUS_PENDING)
+    failed_n  = sum(1 for t in tasks if t.get("狀態") == sheets.STATUS_FAILED)
+    parts = []
+    if pending_n:
+        parts.append(f"待審核 {pending_n}")
+    if failed_n:
+        parts.append(f"失敗 {failed_n}")
+    header_text = f"📋 任務（{'、'.join(parts)}）"
+
+    pages = [tasks[i:i + PAGE_SIZE] for i in range(0, len(tasks), PAGE_SIZE)]
+    total_pages = len(pages)
+    bubbles = [
+        _make_page_bubble(page, idx + 1, total_pages, header_text)
+        for idx, page in enumerate(pages)
+    ]
+    if len(bubbles) == 1:
+        return bubbles[0]
+    return {"type": "carousel", "contents": bubbles}
 
 
 def push_task_card(task: dict, reply_token=None):
@@ -234,13 +243,10 @@ def send_progress(reply_token=None):
     if not pending:
         _send(reply_token, TextSendMessage(text="目前沒有待審核任務 🎉"))
         return
-    lines = [f"📋 待審核任務（共 {len(pending)} 筆）：\n"]
-    for t in pending:
-        badge = "⚠️ " if t.get("狀態") == sheets.STATUS_FAILED else ""
-        title_short = t.get("文章標題", "")[:25]
-        lines.append(f"{badge}#{t['ID']}  {title_short}")
-    lines.append("\n查看ID / 確認ID / 修改ID 意見 / 略過ID")
-    _send(reply_token, TextSendMessage(text="\n".join(lines)))
+    contents = make_task_list_carousel(pending)
+    _send(reply_token, FlexSendMessage(
+        alt_text=f"📋 任務總覽（共 {len(pending)} 筆）", contents=contents
+    ))
 
 
 def send_history(reply_token=None):
