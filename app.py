@@ -234,10 +234,13 @@ def send_progress(reply_token=None):
     if not pending:
         _send(reply_token, TextSendMessage(text="目前沒有待審核任務 🎉"))
         return
-    bubble = make_task_list_bubble(pending)
-    _send(reply_token, FlexSendMessage(
-        alt_text=f"📋 任務總覽（共 {len(pending)} 筆）", contents=bubble
-    ))
+    lines = [f"📋 待審核任務（共 {len(pending)} 筆）：\n"]
+    for t in pending:
+        badge = "⚠️ " if t.get("狀態") == sheets.STATUS_FAILED else ""
+        title_short = t.get("文章標題", "")[:25]
+        lines.append(f"{badge}#{t['ID']}  {title_short}")
+    lines.append("\n查看ID / 確認ID / 修改ID 意見 / 略過ID")
+    _send(reply_token, TextSendMessage(text="\n".join(lines)))
 
 
 def send_history(reply_token=None):
