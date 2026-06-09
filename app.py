@@ -307,6 +307,14 @@ def get_all_tasks():
     return jsonify([dict(r) for r in rows])
 
 
+@app.route("/tasks/<task_id>", methods=["GET"])
+def get_task(task_id):
+    task = sheets.get_task(task_id)
+    if task:
+        return jsonify(task)
+    return jsonify({"error": "not found"}), 404
+
+
 @app.route("/tasks/<task_id>/done", methods=["POST"])
 def mark_task_done(task_id):
     sheets.update_status(task_id, sheets.STATUS_DONE)

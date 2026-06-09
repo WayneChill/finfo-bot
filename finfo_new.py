@@ -152,6 +152,85 @@ def process_edit_queue(driver):
             app.push_text(f"❌ 任務 {task_id} 編輯失敗，請手動處理。\n{task['文章URL']}")
 
 
+def recover_lost_tasks(driver):
+    """掃描 processed_posts.txt，對有佔位留言但 DB 無任務的文章補建任務。"""
+    PROCESSED_FILE = "processed_posts.txt"
+    try:
+        with open(PROCESSED_FILE, "r", encoding="utf-8") as f:
+            all_urls = [line.strip() for line in f if line.strip() and "/posts/" in line]
+    except FileNotFoundError:
+        print("⚠️ processed_posts.txt 不存在")
+        return
+
+    print(f"🔍 掃描 {len(all_urls)} 筆記錄，尋找遺失任務...")
+    recovered = 0
+
+    for post_url in all_urls:
+        task_id = post_url.rstrip("/").split("/")[-1]
+
+        # 確認 Railway DB 是否已有此任務
+        try:
+            r = http.get(f"{RAILWAY_API}/tasks/{task_id}", timeout=5)
+            if r.status_code == 200:
+                continue  # 已存在，跳過
+        except Exception:
+            pass
+
+        # DB 無此任務 → 檢查頁面上是否有自己的留言
+        try:
+            driver.get(post_url)
+            time.sleep(3)
+
+            triggers = driver.find_elements(By.CSS_SELECTOR, "a.comment-editor-trigger")
+            if not triggers:
+                continue  # 沒有自己的留言，跳過
+
+            # 找對應的 comment_id（找有 comment-editor-trigger 的那則留言）
+            comment_id = None
+            all_comments = driver.find_elements(
+                By.CSS_SELECTOR, "div.comment-content[data-comment-id]"
+            )
+            for div in reversed(all_comments):
+                try:
+                    div.find_element(By.CSS_SELECTOR, "a.comment-editor-trigger")
+                    comment_id = div.get_attribute("data-comment-id")
+                    break
+                except Exception:
+                    pass
+
+            if not comment_id:
+                print(f"⚠️ 找不到 comment_id：{task_id}")
+                continue
+
+            # 取文章標題
+            try:
+                title = driver.find_element(By.CSS_SELECTOR, "h1").text.strip()
+            except Exception:
+                title = f"文章 {task_id}"
+
+            # 生成草稿
+            print(f"🤖 補建任務：{task_id}  {title[:30]}")
+            qa_content, full_reply = claude_helper.generate_draft(title, "")
+
+            resp = http.post(f"{RAILWAY_API}/tasks", json={
+                "post_url": post_url,
+                "post_title": title,
+                "comment_id": comment_id,
+                "draft": full_reply,
+                "qa_content": qa_content,
+                "full_reply": full_reply,
+            }, timeout=15)
+            resp.raise_for_status()
+            print(f"✅ 恢復：#{task_id} comment={comment_id}")
+            recovered += 1
+            time.sleep(2)
+
+        except Exception as e:
+            print(f"⚠️ 處理 {task_id} 失敗：{e}")
+
+    print(f"\n🎉 恢復完成，共補建 {recovered} 筆任務")
+
+
 def start_line_webhook():
     """在背景執行 LINE webhook server"""
     from app import app as flask_app
@@ -188,6 +267,9 @@ def run_finfo_bot():
 
     processed_posts = load_processed()
     print(f"📂 已讀取 {len(processed_posts)} 筆處理記錄")
+
+    # 補建遺失任務（一次性，不影響正常流程）
+    recover_lost_tasks(driver)
 
     while True:
         try:
