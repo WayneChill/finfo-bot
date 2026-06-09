@@ -88,8 +88,8 @@ def update_draft(task_id: str, new_draft: str):
 def get_pending_tasks() -> list:
     with _get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM tasks WHERE 狀態 IN (?, ?)",
-            (STATUS_PENDING, STATUS_FAILED)
+            "SELECT * FROM tasks WHERE 狀態 NOT IN (?, ?)",
+            (STATUS_DONE, STATUS_REJECTED)
         ).fetchall()
     return [dict(r) for r in rows]
 
