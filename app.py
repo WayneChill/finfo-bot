@@ -150,8 +150,12 @@ def make_task_list_bubble(tasks: list) -> dict:
         parts.append(f"失敗 {failed_n}")
     header_text = f"📋 任務總覽（{'、'.join(parts)}）"
 
+    PAGE = 7
+    shown = tasks[:PAGE]
+    hidden = len(tasks) - PAGE
+
     rows = []
-    for i, task in enumerate(tasks):
+    for i, task in enumerate(shown):
         if i > 0:
             rows.append({"type": "separator"})
         task_id = task["ID"]
@@ -168,6 +172,10 @@ def make_task_list_bubble(tasks: list) -> dict:
                             "data": f"view_{task_id}", "displayText": f"查看{task_id}"}}
             ]
         })
+    if hidden > 0:
+        rows.append({"type": "separator"})
+        rows.append({"type": "text", "text": f"…還有 {hidden} 筆，輸入「確認ID」直接操作",
+                     "size": "xs", "color": "#888888", "margin": "sm"})
     return {
         "type": "bubble",
         "size": "giga",
