@@ -51,15 +51,18 @@ def _send(reply_token, messages):
         messages = [messages]
     msg = messages if len(messages) > 1 else messages[0]
     if reply_token:
-        line_bot_api.reply_message(reply_token, msg)
-    else:
         try:
-            line_bot_api.push_message(LINE_USER_ID, msg)
+            line_bot_api.reply_message(reply_token, msg)
+            return
         except LineBotApiError as e:
-            if e.status_code == 429:
-                print("⚠️ LINE 推播月配額已用完，跳過 fallback 通知")
-            else:
-                raise
+            print(f"⚠️ reply_message 失敗（{e.status_code}），改用 push_message")
+    try:
+        line_bot_api.push_message(LINE_USER_ID, msg)
+    except LineBotApiError as e:
+        if e.status_code == 429:
+            print("⚠️ LINE 推播月配額已用完，跳過通知")
+        else:
+            raise
 
 
 # ===================================================
