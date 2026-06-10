@@ -121,21 +121,26 @@ def make_task_bubble(task: dict) -> dict:
                 {"type": "button", "style": "link", "height": "sm",
                  "action": {"type": "uri", "label": "🔗 查看原文章", "uri": post_url}},
                 {"type": "separator"},
-                {"type": "text", "text": "💬 AI 草稿：",
+                {"type": "text", "text": "💬 AI 草稿：" if draft_preview else "💬 尚未生成草稿",
                  "size": "xs", "color": "#2E86C1", "weight": "bold", "margin": "md"},
-                {"type": "text", "text": draft_preview,
-                 "size": "sm", "wrap": True, "color": "#2C3E50", "margin": "sm"}
+                *([ {"type": "text", "text": draft_preview,
+                     "size": "sm", "wrap": True, "color": "#2C3E50", "margin": "sm"} ]
+                  if draft_preview else [])
             ]
         },
         "footer": {
             "type": "box", "layout": "vertical", "spacing": "sm",
             "contents": [
-                {"type": "button", "style": "primary", "color": "#27AE60",
-                 "action": {"type": "postback", "label": "✅  確認送出",
-                            "data": f"confirm_{task_id}", "displayText": f"確認{task_id}"}},
-                {"type": "button", "style": "primary", "color": "#2E86C1",
-                 "action": {"type": "postback", "label": "✏️  修改草稿",
-                            "data": f"edit_{task_id}", "displayText": f"修改{task_id}"}},
+                *([ {"type": "button", "style": "primary", "color": "#27AE60",
+                     "action": {"type": "postback", "label": "✅  確認送出",
+                                "data": f"confirm_{task_id}", "displayText": f"確認{task_id}"}},
+                    {"type": "button", "style": "primary", "color": "#2E86C1",
+                     "action": {"type": "postback", "label": "✏️  修改草稿",
+                                "data": f"edit_{task_id}", "displayText": f"修改{task_id}"}} ]
+                  if draft_preview else
+                  [ {"type": "button", "style": "primary", "color": "#8E44AD",
+                     "action": {"type": "postback", "label": "🤖  AI生成草稿",
+                                "data": f"generate_{task_id}", "displayText": f"AI生成{task_id}"}} ]),
                 {"type": "button", "style": "secondary",
                  "action": {"type": "postback", "label": "⏭️  略過此篇",
                             "data": f"skip_{task_id}", "displayText": f"略過{task_id}"}}
@@ -429,6 +434,8 @@ def handle_postback(event):
         handle_edit_request(data[5:], "", rt)
     elif data.startswith("skip_"):
         handle_skip(data[5:], rt)
+    elif data.startswith("generate_"):
+        handle_generate(data[9:], rt)
     elif data.startswith("view_"):
         task_id = data[5:]
         task = sheets.get_task(task_id)
@@ -499,6 +506,19 @@ def handle_edit_reply(task_id: str, instruction: str, reply_token=None):
 def handle_skip(task_id: str, reply_token=None):
     sheets.update_status(task_id, sheets.STATUS_REJECTED)
     _send(reply_token, TextSendMessage(text=f"⏭️ 任務 {task_id} 已略過。"))
+
+
+def handle_generate(task_id: str, reply_token=None):
+    task = sheets.get_task(task_id)
+    if not task:
+        _send(reply_token, TextSendMessage(text=f"❌ 找不到任務 {task_id}"))
+        return
+    _send(reply_token, TextSendMessage(text=f"🤖 正在生成草稿，請稍候..."))
+    qa_content, full_reply = claude_helper.generate_draft(
+        task["文章標題"], ""
+    )
+    sheets.update_full_draft(task_id, full_reply, qa_content, full_reply)
+    push_text(f"✅ 草稿生成完成 #{task_id}：\n\n{qa_content}\n\n確認{task_id} ／ 修改{task_id} [意見]")
 
 
 # ===================================================

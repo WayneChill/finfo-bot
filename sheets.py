@@ -85,6 +85,14 @@ def update_draft(task_id: str, new_draft: str):
         conn.execute("UPDATE tasks SET 草稿 = ? WHERE ID = ?", (new_draft, task_id))
 
 
+def update_full_draft(task_id: str, draft: str, qa_content: str, full_reply: str):
+    with _get_conn() as conn:
+        conn.execute(
+            "UPDATE tasks SET 草稿 = ?, qa_content = ?, full_reply = ? WHERE ID = ?",
+            (draft, qa_content, full_reply, task_id)
+        )
+
+
 def get_pending_tasks() -> list:
     with _get_conn() as conn:
         rows = conn.execute(

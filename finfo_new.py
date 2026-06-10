@@ -322,27 +322,18 @@ def run_finfo_bot():
                         print("⚠️ 未取得回覆 ID，跳過此篇")
                         continue
 
-                    # ③ 取得文章內容（給 Claude）
-                    post_content = get_post_content(driver, link)
-
-                    # ④ Claude 生成草稿
-                    print("🤖 Claude 生成草稿中...")
-                    qa_content, full_reply = claude_helper.generate_draft(title, post_content)
-                    print(f"📝 草稿：{qa_content[:80]}...")
-
-                    # ⑤ 透過 Railway API 新增任務
+                    # ③ 透過 Railway API 新增任務（不自動生成草稿，等 LINE 按 AI生成）
                     resp = http.post(f"{RAILWAY_API}/tasks", json={
                         "post_url": link,
                         "post_title": title,
                         "comment_id": comment_id,
-                        "draft": full_reply,
-                        "qa_content": qa_content,
-                        "full_reply": full_reply,
+                        "draft": "",
+                        "qa_content": "",
+                        "full_reply": "",
                     }, timeout=15)
                     resp.raise_for_status()
                     task_id = resp.json()["task_id"]
-                    print(f"📊 任務已存入 Railway DB：{task_id}")
-                    print(f"📱 任務已靜默存入，等待早報推播")
+                    print(f"📊 任務已存入 Railway DB：{task_id}（等待 LINE 手動 AI生成）")
 
                 except Exception as post_err:
                     print(f"⚠️ 處理文章失敗 [{title[:30]}]：{post_err}，繼續下一篇")
