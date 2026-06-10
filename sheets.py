@@ -96,7 +96,7 @@ def update_full_draft(task_id: str, draft: str, qa_content: str, full_reply: str
 def get_pending_tasks() -> list:
     with _get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM tasks WHERE 狀態 NOT IN (?, ?)",
+            "SELECT * FROM tasks WHERE 狀態 NOT IN (?, ?) ORDER BY 建立時間 DESC",
             (STATUS_DONE, STATUS_REJECTED)
         ).fetchall()
     return [dict(r) for r in rows]
