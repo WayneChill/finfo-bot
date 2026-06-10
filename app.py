@@ -55,13 +55,14 @@ def _send(reply_token, messages):
             line_bot_api.reply_message(reply_token, msg)
             return
         except LineBotApiError as e:
-            print(f"⚠️ reply_message 失敗（{e.status_code}），改用 push_message")
+            print(f"⚠️ reply_message 失敗 status={e.status_code} msg={e.message}")
     try:
         line_bot_api.push_message(LINE_USER_ID, msg)
     except LineBotApiError as e:
         if e.status_code == 429:
             print("⚠️ LINE 推播月配額已用完，跳過通知")
         else:
+            print(f"❌ push_message 失敗 status={e.status_code} msg={e.message}")
             raise
 
 
@@ -419,7 +420,8 @@ def handle_message(event):
 @handler.add(PostbackEvent)
 def handle_postback(event):
     data = event.postback.data
-    rt = event.reply_token  # reply_token，免費使用
+    rt = event.reply_token
+    print(f"📲 Postback: data={data} rt={'ok' if rt else 'none'}")
 
     if data.startswith("confirm_"):
         handle_approve(data[8:], rt)
@@ -430,6 +432,7 @@ def handle_postback(event):
     elif data.startswith("view_"):
         task_id = data[5:]
         task = sheets.get_task(task_id)
+        print(f"📲 view task_id={task_id} found={task is not None}")
         if task:
             push_task_card(task, rt)
         else:
