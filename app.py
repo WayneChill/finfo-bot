@@ -249,6 +249,7 @@ def send_morning_report():
 
 def send_progress(reply_token=None):
     pending = sheets.get_pending_tasks()
+    print(f"📋 get_pending_tasks: {len(pending)} 筆 → " + ", ".join(f"#{t['ID']}({t['狀態']})" for t in pending))
     if not pending:
         _send(reply_token, TextSendMessage(text="目前沒有待審核任務 🎉"))
         return
