@@ -181,25 +181,26 @@ def recover_lost_tasks(driver):
             driver.get(post_url)
             time.sleep(3)
 
-            triggers = driver.find_elements(By.CSS_SELECTOR, "a.comment-editor-trigger")
-            if not triggers:
-                continue  # 沒有自己的留言，跳過
-
-            # 找對應的 comment_id（找有 comment-editor-trigger 的那則留言）
-            comment_id = None
-            all_comments = driver.find_elements(
-                By.CSS_SELECTOR, "div.comment-content[data-comment-id]"
-            )
-            for div in reversed(all_comments):
-                try:
-                    div.find_element(By.CSS_SELECTOR, "a.comment-editor-trigger")
-                    comment_id = div.get_attribute("data-comment-id")
-                    break
-                except Exception:
-                    pass
+            # 用 JS 找 comment-editor-trigger，再往上找 data-comment-id
+            comment_id = driver.execute_script("""
+                var trigger = document.querySelector('a.comment-editor-trigger');
+                if (!trigger) return null;
+                var el = trigger;
+                while (el && el !== document.body) {
+                    if (el.getAttribute('data-comment-id')) return el.getAttribute('data-comment-id');
+                    el = el.parentElement;
+                }
+                var parent = trigger.parentElement;
+                while (parent && parent !== document.body) {
+                    var found = parent.querySelector('[data-comment-id]');
+                    if (found) return found.getAttribute('data-comment-id');
+                    parent = parent.parentElement;
+                }
+                return null;
+            """)
 
             if not comment_id:
-                print(f"⚠️ 找不到 comment_id：{task_id}")
+                print(f"⚠️ 找不到 comment_id：{task_id}（頁面有 trigger 但找不到 ID）")
                 continue
 
             # 取文章標題
