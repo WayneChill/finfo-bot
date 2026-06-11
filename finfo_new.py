@@ -87,10 +87,17 @@ def post_placeholder(driver, post_url: str) -> str | None:
         actions.send_keys(Keys.ENTER).perform()
         
         print(f"✅ 佔位送出：{placeholder_text}")
-        time.sleep(2.5)  # 等頁面更新
+        time.sleep(5)  # 等頁面更新
 
-        # 抓剛送出的回覆 ID
-        comment_id = get_latest_own_comment_id(driver)
+        # 抓剛送出的回覆 ID，最多重試 3 次（頁面更新有時較慢）
+        comment_id = None
+        for attempt in range(3):
+            comment_id = get_latest_own_comment_id(driver)
+            if comment_id:
+                break
+            if attempt < 2:
+                print(f"⚠️ 嘗試 {attempt+1}/3 未取得 comment_id，2s 後重試...")
+                time.sleep(2)
         return comment_id
 
     except Exception as e:
@@ -326,15 +333,23 @@ def run_finfo_bot():
     processed_posts = load_processed()
     print(f"📂 已讀取 {len(processed_posts)} 筆處理記錄")
 
-    # 補建遺失任務（一次性，不影響正常流程）
+    # 補建遺失任務（啟動時跑一次）
     recover_lost_tasks(driver)
+
+    recover_counter = 0  # 每 5 輪補跑一次 recover
 
     while True:
         try:
             # ① 先處理 LINE 即時卡位佇列
             processed_posts = process_url_queue(driver, processed_posts)
 
-            # ② 處理編輯 queue
+            # ② 每 5 輪補建一次遺失任務（有卡位但沒建任務的情況）
+            recover_counter += 1
+            if recover_counter >= 5:
+                recover_lost_tasks(driver)
+                recover_counter = 0
+
+            # ③ 處理編輯 queue
             process_edit_queue(driver)
 
             print(f"\n--- 🕒 巡邏開始：{time.strftime('%H:%M:%S')} ---")
