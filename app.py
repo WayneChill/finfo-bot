@@ -124,11 +124,9 @@ def make_task_bubble(task: dict) -> dict:
                 {"type": "button", "style": "link", "height": "sm",
                  "action": {"type": "uri", "label": "🔗 查看原文章", "uri": post_url}},
                 {"type": "separator"},
-                {"type": "text", "text": "💬 AI 草稿：" if draft_preview else "💬 尚未生成草稿",
-                 "size": "xs", "color": "#2E86C1", "weight": "bold", "margin": "md"},
-                *([ {"type": "text", "text": draft_preview,
-                     "size": "sm", "wrap": True, "color": "#2C3E50", "margin": "sm"} ]
-                  if draft_preview else [])
+                {"type": "text",
+                 "text": "💬 草稿已就緒" if draft_preview else "💬 尚未生成草稿",
+                 "size": "xs", "color": "#2E86C1", "weight": "bold", "margin": "md"}
             ]
         },
         "footer": {
