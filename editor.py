@@ -8,13 +8,16 @@ from selenium.webdriver.support import expected_conditions as EC
 
 
 def _to_trix_html(text: str) -> str:
+    # ONE <div>, all lines joined with <br>.
+    # Blank lines (empty / \xa0) → empty string → produces <br><br> when joined.
+    # This matches Finfo.tw's native clipboard-paste storage format.
     parts = []
     for line in text.split('\n'):
-        if not line.strip('\xa0').strip():
-            parts.append('<p>&nbsp;</p>')
+        if line.strip('\xa0').strip():
+            parts.append(_html_mod.escape(line, quote=False))
         else:
-            parts.append(f'<p>{_html_mod.escape(line, quote=False)}</p>')
-    return ''.join(parts)
+            parts.append('')
+    return '<div>' + '<br>'.join(parts) + '</div>'
 
 
 def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bool:
@@ -33,46 +36,40 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
         trix = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, "trix-editor.bg-white"))
         )
-
-        # 先 click 確保 trix .editor 物件初始化完成
         trix.click()
         time.sleep(0.8)
+
+        # 先讀現有 HTML（診斷用）
+        existing = driver.execute_script("""
+            var el = document.querySelector('trix-editor.bg-white');
+            var inputId = el ? el.getAttribute('input') : null;
+            var hidden = inputId ? document.getElementById(inputId) : null;
+            return hidden ? hidden.value.substring(0, 200) : 'not found';
+        """)
+        print(f"🔍 existing HTML: {existing}")
 
         trix_html = _to_trix_html(new_content)
         result = driver.execute_script("""
             var el = document.querySelector('trix-editor.bg-white');
-            if (!el || !el.editor) return 'error: editor not ready';
-            el.editor.loadHTML(arguments[0]);
-
-            // 強制同步 hidden input（Rails form 讀的是這裡）
+            if (!el) return 'error: no trix';
             var inputId = el.getAttribute('input');
             var hidden = inputId ? document.getElementById(inputId) : null;
-            if (hidden) {
-                hidden.value = el.value;
-                hidden.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-            el.dispatchEvent(new Event('trix-change', { bubbles: true }));
-
-            return 'ok:input=' + (inputId || 'not-found');
+            if (!hidden) return 'error: no hidden input';
+            // Detach trix from hidden input so trix cannot overwrite our value on form submit
+            el.removeAttribute('input');
+            hidden.value = arguments[0];
+            return 'ok:input=' + inputId + ':len=' + arguments[0].length;
         """, trix_html)
-        print(f"🔍 loadHTML: {result}")
-        time.sleep(0.8)
+        print(f"🔍 direct set: {result}")
+        print(f"🔍 trix_html preview: {trix_html[:120]}")
+        time.sleep(0.5)
 
-        preview = driver.execute_script(
-            "var el = document.querySelector('trix-editor.bg-white');"
-            "return el ? el.innerText.substring(0, 60) : 'not found';"
-        )
-        print(f"🔍 trix 內容預覽: {preview}")
-
-        # loadHTML 後重新 click 恢復 focus
+        # 提交（TAB×3 + ENTER）
         trix.click()
         time.sleep(0.5)
-
-        actions = ActionChains(driver)
-        actions.send_keys(Keys.TAB).send_keys(Keys.TAB).send_keys(Keys.TAB).perform()
+        ActionChains(driver).send_keys(Keys.TAB).send_keys(Keys.TAB).send_keys(Keys.TAB).perform()
         time.sleep(0.5)
-        actions = ActionChains(driver)
-        actions.send_keys(Keys.ENTER).perform()
+        ActionChains(driver).send_keys(Keys.ENTER).perform()
         time.sleep(3)
 
         print(f"✅ 編輯成功：comment_id={comment_id}")

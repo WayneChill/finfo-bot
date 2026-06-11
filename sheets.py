@@ -37,7 +37,7 @@ def _init_db():
             )
         """)
         existing = {row[1] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
-        for col in ("qa_content", "full_reply"):
+        for col in ("qa_content", "full_reply", "建立時間"):
             if col not in existing:
                 conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} TEXT")
 

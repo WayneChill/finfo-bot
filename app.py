@@ -248,14 +248,35 @@ def send_morning_report():
 
 
 def send_progress(reply_token=None):
-    pending = sheets.get_pending_tasks()
-    print(f"📋 get_pending_tasks: {len(pending)} 筆 → " + ", ".join(f"#{t['ID']}({t['狀態']})" for t in pending))
+    from datetime import datetime, timedelta
+    all_pending = sheets.get_pending_tasks()
+    cutoff = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+    # Include tasks with no 建立時間 (NULL → treat as needing review)
+    pending = [t for t in all_pending if not t.get("建立時間") or t["建立時間"] >= cutoff]
+    hidden = len(all_pending) - len(pending)
+    print(f"📋 pending: {len(all_pending)} 筆，顯示近30天 {len(pending)} 筆")
     if not pending:
-        _send(reply_token, TextSendMessage(text="目前沒有待審核任務 🎉"))
+        msg = "目前沒有近 30 天的待審核任務 🎉"
+        if hidden:
+            msg += f"\n（另有 {hidden} 筆超過 30 天的舊任務，輸入「舊任務」查看）"
+        _send(reply_token, TextSendMessage(text=msg))
         return
     contents = make_task_list_carousel(pending)
+    alt = f"📋 任務總覽（{len(pending)} 筆" + (f"，另有 {hidden} 筆舊任務" if hidden else "") + "）"
+    _send(reply_token, FlexSendMessage(alt_text=alt, contents=contents))
+
+
+def send_old_tasks(reply_token=None):
+    from datetime import datetime, timedelta
+    all_pending = sheets.get_pending_tasks()
+    cutoff = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+    old = [t for t in all_pending if (t.get("建立時間") or "") < cutoff]
+    if not old:
+        _send(reply_token, TextSendMessage(text="沒有超過 30 天的舊任務。"))
+        return
+    contents = make_task_list_carousel(old)
     _send(reply_token, FlexSendMessage(
-        alt_text=f"📋 任務總覽（共 {len(pending)} 筆）", contents=contents
+        alt_text=f"📋 舊任務（{len(old)} 筆，超過30天）", contents=contents
     ))
 
 
@@ -399,6 +420,8 @@ def handle_message(event):
 
     if text == "進度":
         send_progress(rt)
+    elif text == "舊任務":
+        send_old_tasks(rt)
     elif text == "歷史":
         send_history(rt)
     elif text.startswith("查看"):
