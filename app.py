@@ -480,6 +480,7 @@ def handle_postback(event):
     data = event.postback.data
     rt = event.reply_token
     print(f"📲 Postback: data={data} rt={'ok' if rt else 'none'}")
+    pending_edit.pop(LINE_USER_ID, None)  # 清掉卡住的修改狀態
 
     if data.startswith("confirm_"):
         handle_approve(data[8:], rt)
@@ -521,8 +522,7 @@ def handle_edit_request(task_id: str, instruction: str, reply_token=None):
     sheets.update_status(task_id, sheets.STATUS_EDITING)
     pending_edit[LINE_USER_ID] = task_id
     if instruction:
-        # 先 reply 告知修改中（免費），結果再 push（消耗 1 則，因 reply token 已用完）
-        _send(reply_token, TextSendMessage(text="✏️ 正在根據你的意見修改草稿..."))
+        pending_edit.pop(LINE_USER_ID, None)
         new_qa = claude_helper.revise_draft(
             original_draft=task["草稿"],
             instruction=instruction,
@@ -531,8 +531,10 @@ def handle_edit_request(task_id: str, instruction: str, reply_token=None):
         new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=new_qa)
         sheets.update_draft(task_id, new_full)
         sheets.update_status(task_id, sheets.STATUS_PENDING)
-        pending_edit.pop(LINE_USER_ID, None)
-        push_text(f"✏️ 修改後草稿：\n━━━━━━━━━━━━━━\n{new_qa}\n━━━━━━━━━━━━━━\n確認{task_id} ／ 修改{task_id} [繼續修改]")
+        _send(reply_token, [
+            TextSendMessage(text=f"✏️ 修改完成 #{task_id}（長按可複製）：\n\n{new_qa}"),
+            TextSendMessage(text=f"確認{task_id} ／ 修改{task_id} [繼續修改意見]")
+        ])
     else:
         _send(reply_token, TextSendMessage(text=f"請說明要怎麼修改（任務 {task_id}）："))
 
@@ -542,8 +544,7 @@ def handle_edit_reply(task_id: str, instruction: str, reply_token=None):
     if not task:
         pending_edit.pop(LINE_USER_ID, None)
         return
-    # 先 reply 告知修改中（免費），結果再 push（消耗 1 則）
-    _send(reply_token, TextSendMessage(text="✏️ 修改中..."))
+    pending_edit.pop(LINE_USER_ID, None)
     new_qa = claude_helper.revise_draft(
         original_draft=task["草稿"],
         instruction=instruction,
@@ -552,8 +553,10 @@ def handle_edit_reply(task_id: str, instruction: str, reply_token=None):
     new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=new_qa)
     sheets.update_draft(task_id, new_full)
     sheets.update_status(task_id, sheets.STATUS_PENDING)
-    pending_edit.pop(LINE_USER_ID, None)
-    push_text(f"✏️ 修改後草稿：\n━━━━━━━━━━━━━━\n{new_qa}\n━━━━━━━━━━━━━━\n確認{task_id} ／ 修改{task_id} [繼續修改]")
+    _send(reply_token, [
+        TextSendMessage(text=f"✏️ 修改完成 #{task_id}（長按可複製）：\n\n{new_qa}"),
+        TextSendMessage(text=f"確認{task_id} ／ 修改{task_id} [繼續修改意見]")
+    ])
 
 
 def handle_skip(task_id: str, reply_token=None):
