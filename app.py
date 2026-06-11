@@ -219,9 +219,9 @@ def push_task_card(task: dict, reply_token=None):
     qa_raw = task.get("qa_content") or _extract_qa(task.get("草稿", ""))
     bubble = make_task_bubble(task)
     messages = [FlexSendMessage(alt_text=f"任務 #{task['ID']} 請審核", contents=bubble)]
-    if len(qa_raw) > FLEX_TEXT_LIMIT:
+    if qa_raw:
         messages.append(TextSendMessage(
-            text=f"📄 完整草稿 #{task['ID']}：\n\n{qa_raw}"
+            text=f"📄 草稿 #{task['ID']}（長按可複製）：\n\n{qa_raw}"
         ))
     _send(reply_token, messages)
 
