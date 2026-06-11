@@ -15,8 +15,11 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 import pytz
 
+import re
 import sheets
 import claude_helper
+
+_FINFO_URL_RE = re.compile(r'https?://finfo\.tw/posts/(\d+)')
 
 LINE_CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
@@ -375,6 +378,27 @@ def update_comment_id(task_id):
     return jsonify({"ok": True, "task_id": task_id, "comment_id": new_comment_id})
 
 
+@app.route("/queue", methods=["POST"])
+def add_queue():
+    data = request.get_json()
+    url = data.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "url required"}), 400
+    item_id = sheets.add_url_request(url)
+    return jsonify({"id": item_id}), 201
+
+
+@app.route("/queue/pending", methods=["GET"])
+def get_queue():
+    return jsonify(sheets.get_pending_url_requests())
+
+
+@app.route("/queue/<int:item_id>/done", methods=["POST"])
+def queue_done(item_id):
+    sheets.mark_url_request_done(item_id)
+    return jsonify({"ok": True})
+
+
 @app.route("/examples", methods=["POST"])
 def create_example():
     data = request.get_json()
@@ -417,6 +441,13 @@ def webhook():
 def handle_message(event):
     text = event.message.text.strip()
     rt = event.reply_token  # reply_token，免費使用
+
+    m = _FINFO_URL_RE.search(text)
+    if m:
+        url = f"https://finfo.tw/posts/{m.group(1)}"
+        sheets.add_url_request(url)
+        _send(rt, TextSendMessage(text=f"✅ 已加入佇列，Bot 巡邏時將自動卡位：\n{url}"))
+        return
 
     if text == "進度":
         send_progress(rt)

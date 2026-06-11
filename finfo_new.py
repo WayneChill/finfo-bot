@@ -124,6 +124,63 @@ def get_post_content(driver, post_url: str) -> str:
         return ""
 
 
+def process_url_queue(driver, processed_posts: list) -> list:
+    """處理 LINE bot 收到的即時卡位請求，回傳更新後的 processed_posts。"""
+    try:
+        resp = http.get(f"{RAILWAY_API}/queue/pending", timeout=10)
+        resp.raise_for_status()
+        items = resp.json()
+    except Exception as e:
+        print(f"⚠️ 無法取得 URL 佇列：{e}")
+        return processed_posts
+
+    for item in items:
+        url = item["url"]
+        item_id = item["id"]
+        task_id = url.rstrip("/").split("/")[-1]
+
+        http.post(f"{RAILWAY_API}/queue/{item_id}/done", timeout=10)
+
+        if url in processed_posts:
+            print(f"⏭️ 佇列 URL 已處理過：{url}")
+            continue
+
+        print(f"🔔 佇列卡位：{url}")
+        processed_posts.append(url)
+        try:
+            with open("processed_posts.txt", "w", encoding="utf-8") as f:
+                f.write("\n".join(processed_posts))
+        except Exception:
+            pass
+
+        try:
+            comment_id = post_placeholder(driver, url)
+            if not comment_id:
+                print(f"⚠️ 佔位失敗：{url}")
+                continue
+
+            try:
+                title = driver.find_element(By.TAG_NAME, "h1").text.strip()
+            except Exception:
+                title = f"文章 {task_id}"
+
+            resp2 = http.post(f"{RAILWAY_API}/tasks", json={
+                "post_url": url,
+                "post_title": title,
+                "comment_id": comment_id,
+                "draft": "",
+                "qa_content": "",
+                "full_reply": "",
+            }, timeout=15)
+            resp2.raise_for_status()
+            print(f"✅ 佇列卡位完成：{title[:30]}")
+            app.push_text(f"🔔 已卡位（LINE 觸發）：{title[:30]}")
+        except Exception as e:
+            print(f"⚠️ 佇列卡位失敗 [{url}]：{e}")
+
+    return processed_posts
+
+
 def process_edit_queue(driver):
     """向 Railway 取得已確認任務並執行編輯"""
     try:
@@ -274,7 +331,10 @@ def run_finfo_bot():
 
     while True:
         try:
-            # ① 先處理編輯 queue
+            # ① 先處理 LINE 即時卡位佇列
+            processed_posts = process_url_queue(driver, processed_posts)
+
+            # ② 處理編輯 queue
             process_edit_queue(driver)
 
             print(f"\n--- 🕒 巡邏開始：{time.strftime('%H:%M:%S')} ---")
@@ -312,7 +372,7 @@ def run_finfo_bot():
                 try:
                     print(f"🎯 鎖定：{title}，準備佔位！")
 
-                    # ② 送出佔位（佔位前先記錄，避免重複卡位）
+                    # ③ 送出佔位（佔位前先記錄，避免重複卡位）
                     processed_posts.append(link)
                     save_processed(processed_posts)
 
@@ -322,7 +382,7 @@ def run_finfo_bot():
                         print("⚠️ 未取得回覆 ID，跳過此篇")
                         continue
 
-                    # ③ 透過 Railway API 新增任務（不自動生成草稿，等 LINE 按 AI生成）
+                    # ④ 透過 Railway API 新增任務（不自動生成草稿，等 LINE 按 AI生成）
                     resp = http.post(f"{RAILWAY_API}/tasks", json={
                         "post_url": link,
                         "post_title": title,

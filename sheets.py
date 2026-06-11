@@ -51,6 +51,15 @@ def _init_db():
             )
         """)
 
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS url_queue (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                url        TEXT UNIQUE,
+                status     TEXT DEFAULT 'pending',
+                created_at TEXT
+            )
+        """)
+
 
 _init_db()
 
@@ -141,6 +150,28 @@ def find_similar_examples(title: str, limit: int = 3) -> list:
     if scored[0][0] == 0:
         return []
     return [ex for s, ex in scored[:limit] if s > 0]
+
+
+def add_url_request(url: str) -> int:
+    with _get_conn() as conn:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO url_queue (url, status, created_at) VALUES (?, 'pending', ?)",
+            (url, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        )
+        return cur.lastrowid
+
+
+def get_pending_url_requests() -> list:
+    with _get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM url_queue WHERE status = 'pending' ORDER BY created_at ASC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_url_request_done(item_id: int):
+    with _get_conn() as conn:
+        conn.execute("UPDATE url_queue SET status = 'done' WHERE id = ?", (item_id,))
 
 
 def get_recent_done_tasks(days: int = 7) -> list:
