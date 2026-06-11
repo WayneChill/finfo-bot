@@ -9,14 +9,18 @@ from selenium.webdriver.support import expected_conditions as EC
 
 def _to_trix_html(text: str) -> str:
     # ONE <div>, all lines joined with <br>.
-    # Blank lines (empty / \xa0) → empty string → produces <br><br> when joined.
-    # This matches Finfo.tw's native clipboard-paste storage format.
+    # Blank lines (empty / \xa0) → empty string → <br><br> when joined.
+    # Consecutive blank lines are collapsed to one to avoid triple-<br> from double _B in template.
     parts = []
+    prev_empty = False
     for line in text.split('\n'):
         if line.strip('\xa0').strip():
             parts.append(_html_mod.escape(line, quote=False))
+            prev_empty = False
         else:
-            parts.append('')
+            if not prev_empty:
+                parts.append('')
+            prev_empty = True
     return '<div>' + '<br>'.join(parts) + '</div>'
 
 
@@ -49,19 +53,26 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
         print(f"🔍 existing HTML: {existing}")
 
         trix_html = _to_trix_html(new_content)
-        result = driver.execute_script("""
+        print(f"🔍 trix_html preview: {trix_html[:150]}")
+
+        # Load into trix's internal document so trix itself serializes the correct format on submit
+        load_result = driver.execute_script("""
             var el = document.querySelector('trix-editor.bg-white');
             if (!el) return 'error: no trix';
-            var inputId = el.getAttribute('input');
-            var hidden = inputId ? document.getElementById(inputId) : null;
-            if (!hidden) return 'error: no hidden input';
-            // Detach trix from hidden input so trix cannot overwrite our value on form submit
-            el.removeAttribute('input');
-            hidden.value = arguments[0];
-            return 'ok:input=' + inputId + ':len=' + arguments[0].length;
+            el.editor.loadHTML(arguments[0]);
+            return 'ok:loadHTML';
         """, trix_html)
-        print(f"🔍 direct set: {result}")
-        print(f"🔍 trix_html preview: {trix_html[:120]}")
+        print(f"🔍 loadHTML: {load_result}")
+        time.sleep(0.5)
+
+        # Verify what trix stored after loadHTML
+        stored = driver.execute_script("""
+            var el = document.querySelector('trix-editor.bg-white');
+            var inputId = el ? el.getAttribute('input') : null;
+            var hidden = inputId ? document.getElementById(inputId) : null;
+            return hidden ? hidden.value.substring(0, 200) : 'not found';
+        """)
+        print(f"🔍 after loadHTML, hidden: {stored}")
         time.sleep(0.5)
 
         # 提交（TAB×3 + ENTER）

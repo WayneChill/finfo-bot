@@ -523,13 +523,9 @@ def handle_edit_request(task_id: str, instruction: str, reply_token=None):
     pending_edit[LINE_USER_ID] = task_id
     if instruction:
         pending_edit.pop(LINE_USER_ID, None)
-        new_qa = claude_helper.revise_draft(
-            original_draft=task["草稿"],
-            instruction=instruction,
-            post_title=task["文章標題"]
-        )
+        new_qa = instruction
         new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=new_qa)
-        sheets.update_draft(task_id, new_full)
+        sheets.update_full_draft(task_id, new_full, new_qa, new_full)
         sheets.update_status(task_id, sheets.STATUS_PENDING)
         _send(reply_token, [
             TextSendMessage(text=f"✏️ 修改完成 #{task_id}（長按可複製）：\n\n{new_qa}"),
@@ -545,13 +541,9 @@ def handle_edit_reply(task_id: str, instruction: str, reply_token=None):
         pending_edit.pop(LINE_USER_ID, None)
         return
     pending_edit.pop(LINE_USER_ID, None)
-    new_qa = claude_helper.revise_draft(
-        original_draft=task["草稿"],
-        instruction=instruction,
-        post_title=task["文章標題"]
-    )
+    new_qa = instruction
     new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=new_qa)
-    sheets.update_draft(task_id, new_full)
+    sheets.update_full_draft(task_id, new_full, new_qa, new_full)
     sheets.update_status(task_id, sheets.STATUS_PENDING)
     _send(reply_token, [
         TextSendMessage(text=f"✏️ 修改完成 #{task_id}（長按可複製）：\n\n{new_qa}"),
