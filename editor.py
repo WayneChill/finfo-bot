@@ -1,6 +1,5 @@
 import time
 import html as _html_mod
-import pyperclip
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
@@ -8,17 +7,21 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 
-def _to_clipboard_text(text: str) -> str:
-    # Convert template text to plain text for clipboard paste.
-    # \xa0-only lines (blank markers) become empty lines so trix paste
-    # produces <br><br> (one blank line) inside ONE <div> — same as PLACEHOLDER.
-    lines = []
+def _to_trix_html(text: str) -> str:
+    # ONE <div>, all lines joined with <br>.
+    # \xa0-only lines (blank markers) become '' → <br><br> (one blank line).
+    # Consecutive blank lines collapsed to one.
+    parts = []
+    prev_empty = False
     for line in text.split('\n'):
-        if not line.strip('\xa0').strip():
-            lines.append('')
+        if line.strip('\xa0').strip():
+            parts.append(_html_mod.escape(line, quote=False))
+            prev_empty = False
         else:
-            lines.append(line)
-    return '\n'.join(lines)
+            if not prev_empty:
+                parts.append('')
+            prev_empty = True
+    return '<div>' + '<br>'.join(parts) + '</div>'
 
 
 def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bool:
@@ -40,26 +43,37 @@ def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bo
         trix.click()
         time.sleep(0.8)
 
-        paste_text = _to_clipboard_text(new_content)
-        print(f"🔍 paste_text preview: {paste_text[:150]}")
-        pyperclip.copy(paste_text)
+        trix_html = _to_trix_html(new_content)
+        print(f"🔍 trix_html preview: {trix_html[:200]}")
 
-        actions = ActionChains(driver)
-        # 全選現有內容刪除，再貼上新內容（同 post_placeholder 的方式）
-        actions.key_down(Keys.CONTROL).send_keys('a').key_up(Keys.CONTROL).perform()
-        time.sleep(0.3)
-        actions.send_keys(Keys.DELETE).perform()
-        time.sleep(0.5)
-        ActionChains(driver).key_down(Keys.CONTROL).send_keys('v').key_up(Keys.CONTROL).perform()
-        time.sleep(1.5)
-
-        stored = driver.execute_script("""
+        # Replace the hidden input DOM element with a new one containing our HTML.
+        # Trix's internally cached reference to the OLD element becomes detached
+        # (still in JS memory but removed from DOM). Trix's serialize-on-submit
+        # writes to the detached element (no-op). Our NEW element with the
+        # correct ONE-div+br value is what actually gets submitted.
+        result = driver.execute_script("""
             var el = document.querySelector('trix-editor.bg-white');
-            var inputId = el ? el.getAttribute('input') : null;
-            var hidden = inputId ? document.getElementById(inputId) : null;
-            return hidden ? hidden.value.substring(0, 200) : 'not found';
-        """)
-        print(f"🔍 after paste, hidden: {stored}")
+            if (!el) return 'error: no trix';
+            var inputId = el.getAttribute('input');
+            var hidden = document.getElementById(inputId);
+            if (!hidden) return 'error: no hidden';
+            var name = hidden.getAttribute('name');
+            if (!name) return 'error: no name attr';
+            var parent = hidden.parentNode;
+            if (!parent) return 'error: no parent';
+
+            el.removeAttribute('input');
+
+            var newHidden = document.createElement('input');
+            newHidden.type = 'hidden';
+            newHidden.name = name;
+            newHidden.value = arguments[0];
+            parent.replaceChild(newHidden, hidden);
+
+            return 'ok:name=' + name + ':len=' + arguments[0].length;
+        """, trix_html)
+        print(f"🔍 replace hidden: {result}")
+        time.sleep(0.3)
 
         # 提交（TAB×3 + ENTER）
         trix.click()
