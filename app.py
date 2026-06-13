@@ -136,12 +136,15 @@ def make_task_bubble(task: dict) -> dict:
                      "action": {"type": "postback", "label": "✅  確認送出",
                                 "data": f"confirm_{task_id}", "displayText": f"確認{task_id}"}},
                     {"type": "button", "style": "primary", "color": "#2E86C1",
-                     "action": {"type": "postback", "label": "✏️  修改草稿",
+                     "action": {"type": "postback", "label": "✏️  修改草稿（AI）",
                                 "data": f"edit_{task_id}", "displayText": f"修改{task_id}"}} ]
                   if draft_preview else
                   [ {"type": "button", "style": "primary", "color": "#8E44AD",
                      "action": {"type": "postback", "label": "🤖  AI生成草稿",
                                 "data": f"generate_{task_id}", "displayText": f"AI生成{task_id}"}} ]),
+                {"type": "button", "style": "primary", "color": "#E67E22",
+                 "action": {"type": "postback", "label": "📝  直接編輯",
+                            "data": f"direct_edit_{task_id}", "displayText": f"直接編輯{task_id}"}},
                 {"type": "button", "style": "secondary",
                  "action": {"type": "postback", "label": "⏭️  略過此篇",
                             "data": f"skip_{task_id}", "displayText": f"略過{task_id}"}}
@@ -467,8 +470,19 @@ def handle_message(event):
         handle_edit_request(parts[0], parts[1] if len(parts) > 1 else "", rt)
     elif text.startswith("略過"):
         handle_skip(text.replace("略過", "").strip(), rt)
-    elif task_id := pending_edit.get(LINE_USER_ID):
-        handle_edit_reply(task_id, text, rt)
+    elif pending_val := pending_edit.get(LINE_USER_ID):
+        if pending_val.startswith("direct:"):
+            task_id = pending_val[7:]
+            pending_edit.pop(LINE_USER_ID, None)
+            new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=text)
+            sheets.update_full_draft(task_id, new_full, text, new_full)
+            sheets.update_status(task_id, sheets.STATUS_PENDING)
+            _send(rt, [
+                TextSendMessage(text=f"📝 已儲存 #{task_id}（長按可複製）：\n\n{text}"),
+                TextSendMessage(text=f"確認{task_id} ／ 直接編輯{task_id} 再改")
+            ])
+        else:
+            handle_edit_reply(pending_val, text, rt)
     else:
         _send(rt, TextSendMessage(
             text="指令：\n進度 — 查看待審核任務\n歷史 — 近7天已完成\n確認{ID} / 修改{ID} {意見} / 略過{ID}"
@@ -488,6 +502,8 @@ def handle_postback(event):
         handle_edit_request(data[5:], "", rt)
     elif data.startswith("skip_"):
         handle_skip(data[5:], rt)
+    elif data.startswith("direct_edit_"):
+        handle_direct_edit_request(data[12:], rt)
     elif data.startswith("generate_"):
         handle_generate(data[9:], rt)
     elif data.startswith("view_"):
@@ -515,6 +531,7 @@ def handle_approve(task_id: str, reply_token=None):
 
 
 def handle_edit_request(task_id: str, instruction: str, reply_token=None):
+    """修改草稿（AI）— 給 AI 修改意見，由 AI 重寫 qa_content。"""
     task = sheets.get_task(task_id)
     if not task:
         _send(reply_token, TextSendMessage(text=f"❌ 找不到任務 {task_id}"))
@@ -523,32 +540,54 @@ def handle_edit_request(task_id: str, instruction: str, reply_token=None):
     pending_edit[LINE_USER_ID] = task_id
     if instruction:
         pending_edit.pop(LINE_USER_ID, None)
-        new_qa = instruction
+        new_qa = claude_helper.revise_draft(
+            original_draft=task.get("qa_content") or task.get("草稿", ""),
+            instruction=instruction,
+            post_title=task["文章標題"]
+        )
         new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=new_qa)
         sheets.update_full_draft(task_id, new_full, new_qa, new_full)
         sheets.update_status(task_id, sheets.STATUS_PENDING)
         _send(reply_token, [
-            TextSendMessage(text=f"✏️ 修改完成 #{task_id}（長按可複製）：\n\n{new_qa}"),
+            TextSendMessage(text=f"✏️ AI修改完成 #{task_id}（長按可複製）：\n\n{new_qa}"),
             TextSendMessage(text=f"確認{task_id} ／ 修改{task_id} [繼續修改意見]")
         ])
     else:
-        _send(reply_token, TextSendMessage(text=f"請說明要怎麼修改（任務 {task_id}）："))
+        _send(reply_token, TextSendMessage(text=f"請說明修改意見（任務 {task_id}），AI 會根據意見重寫："))
 
 
 def handle_edit_reply(task_id: str, instruction: str, reply_token=None):
+    """修改草稿（AI）的第二步 — 收到修改意見後 AI 重寫。"""
     task = sheets.get_task(task_id)
     if not task:
         pending_edit.pop(LINE_USER_ID, None)
         return
     pending_edit.pop(LINE_USER_ID, None)
-    new_qa = instruction
+    new_qa = claude_helper.revise_draft(
+        original_draft=task.get("qa_content") or task.get("草稿", ""),
+        instruction=instruction,
+        post_title=task["文章標題"]
+    )
     new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=new_qa)
     sheets.update_full_draft(task_id, new_full, new_qa, new_full)
     sheets.update_status(task_id, sheets.STATUS_PENDING)
     _send(reply_token, [
-        TextSendMessage(text=f"✏️ 修改完成 #{task_id}（長按可複製）：\n\n{new_qa}"),
+        TextSendMessage(text=f"✏️ AI修改完成 #{task_id}（長按可複製）：\n\n{new_qa}"),
         TextSendMessage(text=f"確認{task_id} ／ 修改{task_id} [繼續修改意見]")
     ])
+
+
+def handle_direct_edit_request(task_id: str, reply_token=None):
+    """直接編輯 — 不經過 AI，使用者貼上完整內容直接儲存。"""
+    task = sheets.get_task(task_id)
+    if not task:
+        _send(reply_token, TextSendMessage(text=f"❌ 找不到任務 {task_id}"))
+        return
+    sheets.update_status(task_id, sheets.STATUS_EDITING)
+    pending_edit[LINE_USER_ID] = f"direct:{task_id}"
+    _send(reply_token, TextSendMessage(
+        text=f"📝 直接編輯 #{task_id}\n\n請貼上完整的 Q&A 回答內容（不會經過 AI 處理）："
+    ))
 
 
 def handle_skip(task_id: str, reply_token=None):
