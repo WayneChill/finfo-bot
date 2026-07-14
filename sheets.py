@@ -102,6 +102,15 @@ def update_full_draft(task_id: str, draft: str, qa_content: str, full_reply: str
         )
 
 
+def skip_all_pending() -> int:
+    with _get_conn() as conn:
+        cur = conn.execute(
+            "UPDATE tasks SET 狀態 = ? WHERE 狀態 = ?",
+            (STATUS_REJECTED, STATUS_PENDING)
+        )
+        return cur.rowcount
+
+
 def get_pending_tasks() -> list:
     with _get_conn() as conn:
         rows = conn.execute(

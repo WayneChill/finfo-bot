@@ -468,6 +468,8 @@ def handle_message(event):
     elif text.startswith("修改"):
         parts = text.replace("修改", "").strip().split(" ", 1)
         handle_edit_request(parts[0], parts[1] if len(parts) > 1 else "", rt)
+    elif text == "全部略過":
+        handle_skip_all(rt)
     elif text.startswith("略過"):
         handle_skip(text.replace("略過", "").strip(), rt)
     elif pending_val := pending_edit.get(LINE_USER_ID):
@@ -485,7 +487,7 @@ def handle_message(event):
             handle_edit_reply(pending_val, text, rt)
     else:
         _send(rt, TextSendMessage(
-            text="指令：\n進度 — 查看待審核任務\n歷史 — 近7天已完成\n確認{ID} / 修改{ID} {意見} / 略過{ID}"
+            text="指令：\n進度 — 查看待審核任務\n歷史 — 近7天已完成\n確認{ID} / 修改{ID} {意見} / 略過{ID} / 全部略過"
         ))
 
 
@@ -593,6 +595,11 @@ def handle_direct_edit_request(task_id: str, reply_token=None):
 def handle_skip(task_id: str, reply_token=None):
     sheets.update_status(task_id, sheets.STATUS_REJECTED)
     _send(reply_token, TextSendMessage(text=f"⏭️ 任務 {task_id} 已略過。"))
+
+
+def handle_skip_all(reply_token=None):
+    count = sheets.skip_all_pending()
+    _send(reply_token, TextSendMessage(text=f"⏭️ 已略過 {count} 筆任務"))
 
 
 def handle_generate(task_id: str, reply_token=None):
