@@ -223,7 +223,6 @@ def process_url_queue(driver, processed_posts: list) -> list:
             create_auto_reply_task(url, title, comment_id, post_content)
             mark_confirmed(url)
             print(f"✅ 佇列卡位並生成 AI 回覆完成：{title[:30]}")
-            app.push_text(f"🤖 已生成並排入自動回覆：{title[:30]}")
         except Exception as e:
             print(f"⚠️ 佇列卡位失敗 [{url}]：{e}")
 
@@ -252,10 +251,10 @@ def process_edit_queue(driver):
 
         if success:
             http.post(f"{RAILWAY_API}/tasks/{task_id}/done", timeout=10)
-            app.push_text(f"✅ 任務 {task_id} 編輯完成！")
+            print(f"✅ 任務 {task_id} 編輯完成（不發送 LINE 推播）")
         else:
             http.post(f"{RAILWAY_API}/tasks/{task_id}/fail", timeout=10)
-            app.push_text(f"❌ 任務 {task_id} 編輯失敗，請手動處理。\n{task['文章URL']}")
+            print(f"❌ 任務 {task_id} 編輯失敗：{task['文章URL']}（不發送 LINE 推播）")
 
 
 def recover_lost_tasks(driver):
