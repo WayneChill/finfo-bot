@@ -51,8 +51,26 @@ PLACEHOLDER = """📌 保險一二三⚡規劃好簡單 — 夫妻雙業務・�
 PATROL_INTERVAL_MIN = 15
 PATROL_INTERVAL_MAX = 25
 MAX_PROCESSED_CACHE = 500
+CONFIRMED_FILE = "confirmed_posts.txt"
 
 # ===================================================
+
+
+def load_confirmed() -> set:
+    """讀取已確認「Railway DB 已有任務」的文章網址，之後不再重複檢查。"""
+    try:
+        with open(CONFIRMED_FILE, "r", encoding="utf-8") as f:
+            return set(line.strip() for line in f if line.strip())
+    except FileNotFoundError:
+        return set()
+
+
+def mark_confirmed(url: str):
+    try:
+        with open(CONFIRMED_FILE, "a", encoding="utf-8") as f:
+            f.write(url + "\n")
+    except Exception:
+        pass
 
 
 def post_placeholder(driver, post_url: str) -> str | None:
@@ -131,6 +149,36 @@ def get_post_content(driver, post_url: str) -> str:
         return ""
 
 
+def create_auto_reply_task(post_url: str, post_title: str,
+                           comment_id: str, post_content: str = "") -> str:
+    """Generate a complete AI reply and enqueue it without manual approval."""
+    print(f"🤖 AI 正在生成回覆：{post_title[:30]}")
+    qa_content, full_reply = claude_helper.generate_draft(post_title, post_content)
+
+    # Never publish the helper's visible fallback error as an actual reply.
+    if not qa_content or qa_content.startswith("（草稿生成失敗"):
+        raise RuntimeError("AI 草稿生成失敗，保留佔位並等待下次重試")
+
+    response = http.post(f"{RAILWAY_API}/tasks", json={
+        "post_url": post_url,
+        "post_title": post_title,
+        "comment_id": comment_id,
+        "draft": full_reply,
+        "qa_content": qa_content,
+        "full_reply": full_reply,
+        "auto_approve": True,
+    }, timeout=15)
+    response.raise_for_status()
+    task_id = response.json()["task_id"]
+
+    # The existing reset endpoint puts a task into the same queue previously
+    # reached by pressing the LINE confirmation button.
+    approve = http.post(f"{RAILWAY_API}/tasks/{task_id}/reset", timeout=10)
+    approve.raise_for_status()
+    print(f"✅ AI 回覆已排入自動編輯佇列：{task_id}")
+    return task_id
+
+
 def process_url_queue(driver, processed_posts: list) -> list:
     """處理 LINE bot 收到的即時卡位請求，回傳更新後的 processed_posts。"""
     try:
@@ -171,17 +219,11 @@ def process_url_queue(driver, processed_posts: list) -> list:
             except Exception:
                 title = f"文章 {task_id}"
 
-            resp2 = http.post(f"{RAILWAY_API}/tasks", json={
-                "post_url": url,
-                "post_title": title,
-                "comment_id": comment_id,
-                "draft": "",
-                "qa_content": "",
-                "full_reply": "",
-            }, timeout=15)
-            resp2.raise_for_status()
-            print(f"✅ 佇列卡位完成：{title[:30]}")
-            app.push_text(f"🔔 已卡位（LINE 觸發）：{title[:30]}")
+            post_content = get_post_content(driver, url)
+            create_auto_reply_task(url, title, comment_id, post_content)
+            mark_confirmed(url)
+            print(f"✅ 佇列卡位並生成 AI 回覆完成：{title[:30]}")
+            app.push_text(f"🤖 已生成並排入自動回覆：{title[:30]}")
         except Exception as e:
             print(f"⚠️ 佇列卡位失敗 [{url}]：{e}")
 
@@ -226,17 +268,20 @@ def recover_lost_tasks(driver):
         print("⚠️ processed_posts.txt 不存在")
         return
 
-    print(f"🔍 掃描 {len(all_urls)} 筆記錄，尋找遺失任務...")
+    confirmed = load_confirmed()
+    todo_urls = [u for u in all_urls if u not in confirmed]
+    print(f"🔍 {len(all_urls)} 筆記錄中，{len(all_urls) - len(todo_urls)} 篇已確認過略過，實際檢查 {len(todo_urls)} 筆...")
     recovered = 0
 
-    for post_url in all_urls:
+    for post_url in todo_urls:
         task_id = post_url.rstrip("/").split("/")[-1]
 
         # 確認 Railway DB 是否已有此任務
         try:
             r = http.get(f"{RAILWAY_API}/tasks/{task_id}", timeout=5)
             if r.status_code == 200:
-                continue  # 已存在，跳過
+                mark_confirmed(post_url)  # 已存在，之後永久跳過
+                continue
         except Exception:
             pass
 
@@ -273,20 +318,11 @@ def recover_lost_tasks(driver):
             except Exception:
                 title = f"文章 {task_id}"
 
-            # 生成草稿
-            print(f"🤖 補建任務：{task_id}  {title[:30]}")
-            qa_content, full_reply = claude_helper.generate_draft(title, "")
-
-            resp = http.post(f"{RAILWAY_API}/tasks", json={
-                "post_url": post_url,
-                "post_title": title,
-                "comment_id": comment_id,
-                "draft": full_reply,
-                "qa_content": qa_content,
-                "full_reply": full_reply,
-            }, timeout=15)
-            resp.raise_for_status()
+            print(f"🤖 補建自動回覆任務：{task_id}  {title[:30]}")
+            post_content = get_post_content(driver, post_url)
+            create_auto_reply_task(post_url, title, comment_id, post_content)
             print(f"✅ 恢復：#{task_id} comment={comment_id}")
+            mark_confirmed(post_url)
             recovered += 1
             time.sleep(2)
 
@@ -303,7 +339,7 @@ def start_line_webhook():
 
 
 def run_finfo_bot():
-    print("⚡ 啟動『保險一二三』智慧版（佔位 + LINE 審核）...")
+    print("⚡ 啟動『保險一二三』自動 AI 回覆版（佔位 + AI 生成 + 自動送出）...")
     
     # 背景啟動 LINE webhook
     webhook_thread = threading.Thread(target=start_line_webhook, daemon=True)
@@ -397,18 +433,13 @@ def run_finfo_bot():
                         print("⚠️ 未取得回覆 ID，跳過此篇")
                         continue
 
-                    # ④ 透過 Railway API 新增任務（不自動生成草稿，等 LINE 按 AI生成）
-                    resp = http.post(f"{RAILWAY_API}/tasks", json={
-                        "post_url": link,
-                        "post_title": title,
-                        "comment_id": comment_id,
-                        "draft": "",
-                        "qa_content": "",
-                        "full_reply": "",
-                    }, timeout=15)
-                    resp.raise_for_status()
-                    task_id = resp.json()["task_id"]
-                    print(f"📊 任務已存入 Railway DB：{task_id}（等待 LINE 手動 AI生成）")
+                    # ④ 生成完整 AI 回覆並直接排入編輯 queue
+                    post_content = get_post_content(driver, link)
+                    task_id = create_auto_reply_task(
+                        link, title, comment_id, post_content
+                    )
+                    mark_confirmed(link)
+                    print(f"📊 任務已存入 Railway DB：{task_id}（自動送出，免 LINE 審核）")
 
                 except Exception as post_err:
                     print(f"⚠️ 處理文章失敗 [{title[:30]}]：{post_err}，繼續下一篇")
@@ -416,6 +447,9 @@ def run_finfo_bot():
             if len(processed_posts) > MAX_PROCESSED_CACHE:
                 processed_posts = processed_posts[-MAX_PROCESSED_CACHE:]
                 save_processed(processed_posts)
+
+            # 不必等下一輪巡邏；剛生成的任務現在就編輯送出。
+            process_edit_queue(driver)
 
             wait_time = random.randint(PATROL_INTERVAL_MIN, PATROL_INTERVAL_MAX)
             print(f"😴 休息 {wait_time} 秒...")

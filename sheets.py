@@ -65,14 +65,15 @@ _init_db()
 
 
 def add_task(post_url: str, post_title: str, comment_id: str, draft: str,
-             qa_content: str = "", full_reply: str = "") -> str:
+             qa_content: str = "", full_reply: str = "",
+             status: str = STATUS_PENDING) -> str:
     task_id = post_url.rstrip("/").split("/")[-1]
     with _get_conn() as conn:
         conn.execute(
             """INSERT OR IGNORE INTO tasks
                (ID, 文章URL, 文章標題, 回覆ID, 草稿, 狀態, 建立時間, qa_content, full_reply)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (task_id, post_url, post_title, comment_id, draft, STATUS_PENDING,
+            (task_id, post_url, post_title, comment_id, draft, status,
              datetime.now().strftime("%Y-%m-%d %H:%M:%S"), qa_content, full_reply)
         )
     return task_id

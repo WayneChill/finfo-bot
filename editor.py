@@ -8,20 +8,30 @@ from selenium.webdriver.support import expected_conditions as EC
 
 
 def _to_trix_html(text: str) -> str:
-    # ONE <div>, all lines joined with <br>.
-    # \xa0-only lines (blank markers) become '' → <br><br> (one blank line).
-    # Consecutive blank lines collapsed to one.
-    parts = []
-    prev_empty = False
-    for line in text.split('\n'):
-        if line.strip('\xa0').strip():
-            parts.append(_html_mod.escape(line, quote=False))
-            prev_empty = False
-        else:
-            if not prev_empty:
-                parts.append('')
-            prev_empty = True
-    return '<div>' + '<br>'.join(parts) + '</div>'
+    """Convert plain text to stable Trix block HTML.
+
+    Finfo/Trix may normalize a single ``<div>`` containing many ``<br>`` tags,
+    which made some fixed-template sections lose their spacing.  A block per
+    line plus an explicit blank block survives that normalization reliably.
+    Consecutive blank markers are intentionally collapsed so every section has
+    exactly one visual blank line.
+    """
+    blocks = []
+    previous_blank = False
+    normalized = text.replace('\r\n', '\n').replace('\r', '\n')
+
+    for line in normalized.split('\n'):
+        is_blank = not line.replace('\xa0', '').strip()
+        if is_blank:
+            if not previous_blank:
+                blocks.append('<div><br></div>')
+            previous_blank = True
+            continue
+
+        blocks.append(f'<div>{_html_mod.escape(line, quote=False)}</div>')
+        previous_blank = False
+
+    return ''.join(blocks)
 
 
 def edit_comment(driver, post_url: str, comment_id: str, new_content: str) -> bool:

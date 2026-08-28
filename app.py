@@ -49,7 +49,7 @@ def push_text(text: str):
 
 
 def _send(reply_token, messages):
-    """有 reply_token 時用 reply_message（免費），否則 fallback 到 push_message。"""
+    """Reply to user events for free; only proactive calls may use push."""
     if not isinstance(messages, list):
         messages = [messages]
     msg = messages if len(messages) > 1 else messages[0]
@@ -59,6 +59,7 @@ def _send(reply_token, messages):
             return
         except LineBotApiError as e:
             print(f"⚠️ reply_message 失敗 status={e.status_code} msg={e.message}")
+            return False
     try:
         line_bot_api.push_message(LINE_USER_ID, msg)
     except LineBotApiError as e:
@@ -67,6 +68,7 @@ def _send(reply_token, messages):
         else:
             print(f"❌ push_message 失敗 status={e.status_code} msg={e.message}")
             raise
+    return True
 
 
 # ===================================================
@@ -154,6 +156,8 @@ def make_task_bubble(task: dict) -> dict:
 
 
 PAGE_SIZE = 7
+MAX_CAROUSEL_BUBBLES = 12
+MAX_REPLY_MESSAGES = 5
 
 
 def _make_page_bubble(tasks: list, page: int, total_pages: int, header_text: str) -> dict:
@@ -219,6 +223,40 @@ def make_task_list_carousel(tasks: list) -> dict:
     return {"type": "carousel", "contents": bubbles}
 
 
+def make_task_list_carousels(tasks: list) -> list[dict]:
+    """Split task pages into LINE-valid carousels.
+
+    LINE accepts at most 12 bubbles in one Flex carousel and at most five
+    messages in one reply.  The newest 420 tasks therefore fit in one reply
+    while keeping seven task rows on each bubble.
+    """
+    pending_n = sum(1 for t in tasks if t.get("狀態") == sheets.STATUS_PENDING)
+    failed_n = sum(1 for t in tasks if t.get("狀態") == sheets.STATUS_FAILED)
+    parts = []
+    if pending_n:
+        parts.append(f"待審核 {pending_n}")
+    if failed_n:
+        parts.append(f"失敗 {failed_n}")
+    header_text = f"📋 任務（{'、'.join(parts)}）"
+
+    max_tasks = PAGE_SIZE * MAX_CAROUSEL_BUBBLES * MAX_REPLY_MESSAGES
+    visible = tasks[:max_tasks]
+    pages = [visible[i:i + PAGE_SIZE] for i in range(0, len(visible), PAGE_SIZE)]
+    total_pages = len(pages)
+    page_bubbles = [
+        _make_page_bubble(page, idx + 1, total_pages, header_text)
+        for idx, page in enumerate(pages)
+    ]
+
+    messages = []
+    for i in range(0, len(page_bubbles), MAX_CAROUSEL_BUBBLES):
+        group = page_bubbles[i:i + MAX_CAROUSEL_BUBBLES]
+        messages.append(group[0] if len(group) == 1 else {
+            "type": "carousel", "contents": group
+        })
+    return messages
+
+
 def push_task_card(task: dict, reply_token=None):
     qa_raw = task.get("qa_content") or _extract_qa(task.get("草稿", ""))
     bubble = make_task_bubble(task)
@@ -265,9 +303,13 @@ def send_progress(reply_token=None):
             msg += f"\n（另有 {hidden} 筆超過 30 天的舊任務，輸入「舊任務」查看）"
         _send(reply_token, TextSendMessage(text=msg))
         return
-    contents = make_task_list_carousel(pending)
+    contents_list = make_task_list_carousels(pending)
     alt = f"📋 任務總覽（{len(pending)} 筆" + (f"，另有 {hidden} 筆舊任務" if hidden else "") + "）"
-    _send(reply_token, FlexSendMessage(alt_text=alt, contents=contents))
+    print(f"📤 進度回覆拆成 {len(contents_list)} 則 Flex 訊息")
+    _send(reply_token, [
+        FlexSendMessage(alt_text=alt, contents=contents)
+        for contents in contents_list
+    ])
 
 
 def send_old_tasks(reply_token=None):
@@ -278,10 +320,14 @@ def send_old_tasks(reply_token=None):
     if not old:
         _send(reply_token, TextSendMessage(text="沒有超過 30 天的舊任務。"))
         return
-    contents = make_task_list_carousel(old)
-    _send(reply_token, FlexSendMessage(
-        alt_text=f"📋 舊任務（{len(old)} 筆，超過30天）", contents=contents
-    ))
+    contents_list = make_task_list_carousels(old)
+    _send(reply_token, [
+        FlexSendMessage(
+            alt_text=f"📋 舊任務（{len(old)} 筆，超過30天）",
+            contents=contents,
+        )
+        for contents in contents_list
+    ])
 
 
 def send_history(reply_token=None):
@@ -315,17 +361,31 @@ scheduler.start()
 def create_task():
     data = request.get_json()
     try:
+        draft = data.get("draft", "")
+        auto_approve = bool(data.get("auto_approve")) and bool(draft.strip())
         task_id = sheets.add_task(
             post_url=data["post_url"],
             post_title=data["post_title"],
             comment_id=data["comment_id"],
-            draft=data["draft"],
+            draft=draft,
             qa_content=data.get("qa_content", ""),
             full_reply=data.get("full_reply", ""),
+            status=(sheets.STATUS_APPROVED if auto_approve else sheets.STATUS_PENDING),
         )
+        # add_task is idempotent.  If an earlier attempt created the same task
+        # but failed before approval, refresh its AI content and resume it.
+        if auto_approve:
+            sheets.update_full_draft(
+                task_id, draft, data.get("qa_content", ""),
+                data.get("full_reply", draft)
+            )
+            sheets.update_status(task_id, sheets.STATUS_APPROVED)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-    return jsonify({"task_id": task_id}), 201
+    return jsonify({
+        "task_id": task_id,
+        "status": sheets.STATUS_APPROVED if auto_approve else sheets.STATUS_PENDING,
+    }), 201
 
 
 @app.route("/tasks/approved", methods=["GET"])
