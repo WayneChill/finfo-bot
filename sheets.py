@@ -10,6 +10,7 @@ STATUS_REJECTED = "已略過"
 STATUS_EDITING  = "修改中"
 STATUS_DONE     = "已送出"
 STATUS_FAILED   = "編輯失敗"
+STATUS_CLOSED   = "已結案"
 
 
 def _get_conn():
@@ -116,7 +117,7 @@ def get_pending_tasks() -> list:
     with _get_conn() as conn:
         rows = conn.execute(
             "SELECT * FROM tasks WHERE 狀態 NOT IN (?, ?) ORDER BY 建立時間 DESC",
-            (STATUS_DONE, STATUS_REJECTED)
+            (STATUS_CLOSED, STATUS_REJECTED)
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -189,7 +190,7 @@ def get_recent_done_tasks(days: int = 7) -> list:
     cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     with _get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM tasks WHERE 狀態 IN (?, ?) AND 建立時間 >= ? ORDER BY 建立時間 DESC",
-            (STATUS_DONE, STATUS_REJECTED, cutoff)
+            "SELECT * FROM tasks WHERE 狀態 IN (?, ?, ?) AND 建立時間 >= ? ORDER BY 建立時間 DESC",
+            (STATUS_DONE, STATUS_CLOSED, STATUS_REJECTED, cutoff)
         ).fetchall()
     return [dict(r) for r in rows]

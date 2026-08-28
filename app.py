@@ -9,7 +9,8 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage,
-    FlexSendMessage, PostbackEvent
+    FlexSendMessage, PostbackEvent, QuickReply, QuickReplyButton,
+    MessageAction
 )
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -33,6 +34,16 @@ app = Flask(__name__)
 pending_edit = {}
 
 
+def _command_quick_reply():
+    """Persistent command shortcuts attached to every user-triggered reply."""
+    return QuickReply(items=[
+        QuickReplyButton(action=MessageAction(label="📋 進度", text="進度")),
+        QuickReplyButton(action=MessageAction(label="📊 歷史", text="歷史")),
+        QuickReplyButton(action=MessageAction(label="🗂️ 舊任務", text="舊任務")),
+        QuickReplyButton(action=MessageAction(label="❓ 說明", text="說明")),
+    ])
+
+
 # ===================================================
 # 工具：推播 / 回覆
 # ===================================================
@@ -52,6 +63,8 @@ def _send(reply_token, messages):
     """Reply to user events for free; only proactive calls may use push."""
     if not isinstance(messages, list):
         messages = [messages]
+    if reply_token and messages:
+        messages[-1].quick_reply = _command_quick_reply()
     msg = messages if len(messages) > 1 else messages[0]
     if reply_token:
         try:
@@ -100,6 +113,44 @@ def make_task_bubble(task: dict) -> dict:
     qa_raw = task.get("qa_content") or _extract_qa(task.get("草稿", ""))
     title_short = title[:40] + ("…" if len(title) > 40 else "")
     draft_preview = qa_raw[:FLEX_TEXT_LIMIT]
+    status = task.get("狀態", sheets.STATUS_PENDING)
+    awaiting_close = status == sheets.STATUS_DONE
+
+    if awaiting_close:
+        header_label = "📨 已送出・待確認結案"
+        status_label = "請檢查下方回覆內容；有問題按修改，沒問題按結案"
+        footer_actions = [
+            {"type": "button", "style": "primary", "color": "#2E86C1",
+             "action": {"type": "postback", "label": "✏️  修改回覆（AI）",
+                        "data": f"edit_{task_id}", "displayText": f"修改{task_id}"}},
+            {"type": "button", "style": "primary", "color": "#E67E22",
+             "action": {"type": "postback", "label": "📝  直接編輯",
+                        "data": f"direct_edit_{task_id}", "displayText": f"直接編輯{task_id}"}},
+            {"type": "button", "style": "primary", "color": "#27AE60",
+             "action": {"type": "postback", "label": "✅  確認無誤・結案",
+                        "data": f"close_{task_id}", "displayText": f"結案{task_id}"}},
+        ]
+    else:
+        header_label = f"📌 {status}"
+        status_label = "💬 草稿已就緒" if draft_preview else "💬 尚未生成草稿"
+        footer_actions = [
+            *([{"type": "button", "style": "primary", "color": "#27AE60",
+                "action": {"type": "postback", "label": "✅  確認送出",
+                           "data": f"confirm_{task_id}", "displayText": f"確認{task_id}"}},
+               {"type": "button", "style": "primary", "color": "#2E86C1",
+                "action": {"type": "postback", "label": "✏️  修改草稿（AI）",
+                           "data": f"edit_{task_id}", "displayText": f"修改{task_id}"}}]
+              if draft_preview else
+              [{"type": "button", "style": "primary", "color": "#8E44AD",
+                "action": {"type": "postback", "label": "🤖  AI生成草稿",
+                           "data": f"generate_{task_id}", "displayText": f"AI生成{task_id}"}}]),
+            {"type": "button", "style": "primary", "color": "#E67E22",
+             "action": {"type": "postback", "label": "📝  直接編輯",
+                        "data": f"direct_edit_{task_id}", "displayText": f"直接編輯{task_id}"}},
+            {"type": "button", "style": "secondary",
+             "action": {"type": "postback", "label": "⏭️  略過此篇",
+                        "data": f"skip_{task_id}", "displayText": f"略過{task_id}"}},
+        ]
 
     return {
         "type": "bubble",
@@ -112,7 +163,7 @@ def make_task_bubble(task: dict) -> dict:
         "header": {
             "type": "box", "layout": "vertical",
             "contents": [
-                {"type": "text", "text": "📌 待審核任務",
+                {"type": "text", "text": header_label,
                  "size": "xs", "color": "#2E86C1", "weight": "bold"},
                 {"type": "text", "text": f"任務 #{task_id}",
                  "size": "xl", "weight": "bold", "color": "#1A252F"},
@@ -127,30 +178,13 @@ def make_task_bubble(task: dict) -> dict:
                  "action": {"type": "uri", "label": "🔗 查看原文章", "uri": post_url}},
                 {"type": "separator"},
                 {"type": "text",
-                 "text": "💬 草稿已就緒" if draft_preview else "💬 尚未生成草稿",
+                 "text": status_label,
                  "size": "xs", "color": "#2E86C1", "weight": "bold", "margin": "md"}
             ]
         },
         "footer": {
             "type": "box", "layout": "vertical", "spacing": "sm",
-            "contents": [
-                *([ {"type": "button", "style": "primary", "color": "#27AE60",
-                     "action": {"type": "postback", "label": "✅  確認送出",
-                                "data": f"confirm_{task_id}", "displayText": f"確認{task_id}"}},
-                    {"type": "button", "style": "primary", "color": "#2E86C1",
-                     "action": {"type": "postback", "label": "✏️  修改草稿（AI）",
-                                "data": f"edit_{task_id}", "displayText": f"修改{task_id}"}} ]
-                  if draft_preview else
-                  [ {"type": "button", "style": "primary", "color": "#8E44AD",
-                     "action": {"type": "postback", "label": "🤖  AI生成草稿",
-                                "data": f"generate_{task_id}", "displayText": f"AI生成{task_id}"}} ]),
-                {"type": "button", "style": "primary", "color": "#E67E22",
-                 "action": {"type": "postback", "label": "📝  直接編輯",
-                            "data": f"direct_edit_{task_id}", "displayText": f"直接編輯{task_id}"}},
-                {"type": "button", "style": "secondary",
-                 "action": {"type": "postback", "label": "⏭️  略過此篇",
-                            "data": f"skip_{task_id}", "displayText": f"略過{task_id}"}}
-            ]
+            "contents": footer_actions
         }
     }
 
@@ -169,7 +203,9 @@ def _make_page_bubble(tasks: list, page: int, total_pages: int, header_text: str
         title_short = task.get("文章標題", "")[:20]
         if len(task.get("文章標題", "")) > 20:
             title_short += "…"
-        badge = "⚠️ " if task.get("狀態") == sheets.STATUS_FAILED else ""
+        status = task.get("狀態")
+        badge = ("📨 " if status == sheets.STATUS_DONE else
+                 "⚠️ " if status == sheets.STATUS_FAILED else "")
         rows.append({
             "type": "box", "layout": "horizontal", "alignItems": "center",
             "contents": [
@@ -230,13 +266,19 @@ def make_task_list_carousels(tasks: list) -> list[dict]:
     messages in one reply.  The newest 420 tasks therefore fit in one reply
     while keeping seven task rows on each bubble.
     """
-    pending_n = sum(1 for t in tasks if t.get("狀態") == sheets.STATUS_PENDING)
+    active_n = sum(
+        1 for t in tasks
+        if t.get("狀態") not in (sheets.STATUS_DONE, sheets.STATUS_FAILED)
+    )
     failed_n = sum(1 for t in tasks if t.get("狀態") == sheets.STATUS_FAILED)
+    done_n = sum(1 for t in tasks if t.get("狀態") == sheets.STATUS_DONE)
     parts = []
-    if pending_n:
-        parts.append(f"待審核 {pending_n}")
+    if active_n:
+        parts.append(f"處理中 {active_n}")
     if failed_n:
         parts.append(f"失敗 {failed_n}")
+    if done_n:
+        parts.append(f"待結案 {done_n}")
     header_text = f"📋 任務（{'、'.join(parts)}）"
 
     max_tasks = PAGE_SIZE * MAX_CAROUSEL_BUBBLES * MAX_REPLY_MESSAGES
@@ -260,11 +302,12 @@ def make_task_list_carousels(tasks: list) -> list[dict]:
 def push_task_card(task: dict, reply_token=None):
     qa_raw = task.get("qa_content") or _extract_qa(task.get("草稿", ""))
     bubble = make_task_bubble(task)
-    messages = [FlexSendMessage(alt_text=f"任務 #{task['ID']} 請審核", contents=bubble)]
+    messages = []
     if qa_raw:
         messages.append(TextSendMessage(
-            text=f"📄 草稿 #{task['ID']}（長按可複製）：\n\n{qa_raw}"
+            text=f"📄 實際回覆內容 #{task['ID']}（長按可複製）：\n\n{qa_raw}"
         ))
+    messages.append(FlexSendMessage(alt_text=f"任務 #{task['ID']} 請確認", contents=bubble))
     _send(reply_token, messages)
 
 
@@ -298,7 +341,7 @@ def send_progress(reply_token=None):
     hidden = len(all_pending) - len(pending)
     print(f"📋 pending: {len(all_pending)} 筆，顯示近30天 {len(pending)} 筆")
     if not pending:
-        msg = "目前沒有近 30 天的待審核任務 🎉"
+        msg = "目前沒有近 30 天待處理或待結案的任務 🎉"
         if hidden:
             msg += f"\n（另有 {hidden} 筆超過 30 天的舊任務，輸入「舊任務」查看）"
         _send(reply_token, TextSendMessage(text=msg))
@@ -337,7 +380,8 @@ def send_history(reply_token=None):
         return
     lines = [f"📊 近 7 天已處理（共 {len(done_tasks)} 筆）：\n"]
     for t in done_tasks:
-        icon = "✅" if t["狀態"] == sheets.STATUS_DONE else "⏭️"
+        icon = ("✅" if t["狀態"] == sheets.STATUS_CLOSED else
+                "📨" if t["狀態"] == sheets.STATUS_DONE else "⏭️")
         title_short = t.get("文章標題", "")[:20]
         lines.append(f"{icon} #{t['ID']}  {title_short}  — {t['狀態']}")
     _send(reply_token, TextSendMessage(text="\n".join(lines)))
@@ -516,6 +560,14 @@ def handle_message(event):
         send_old_tasks(rt)
     elif text == "歷史":
         send_history(rt)
+    elif text == "說明":
+        _send(rt, TextSendMessage(
+            text="請使用下方按鈕操作：\n\n"
+                 "📋 進度：查看待處理與待結案任務\n"
+                 "📊 歷史：查看近 7 天紀錄\n"
+                 "🗂️ 舊任務：查看超過 30 天的任務\n\n"
+                 "在任務中按「查看」，即可檢查回覆、修改或結案。"
+        ))
     elif text.startswith("查看"):
         task_id = text.replace("查看", "").strip()
         task = sheets.get_task(task_id)
@@ -532,6 +584,8 @@ def handle_message(event):
         handle_skip_all(rt)
     elif text.startswith("略過"):
         handle_skip(text.replace("略過", "").strip(), rt)
+    elif text.startswith("結案"):
+        handle_close(text.replace("結案", "").strip(), rt)
     elif pending_val := pending_edit.get(LINE_USER_ID):
         if pending_val.startswith("direct:"):
             task_id = pending_val[7:]
@@ -539,16 +593,12 @@ def handle_message(event):
             new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=text)
             sheets.update_full_draft(task_id, new_full, text, new_full)
             sheets.update_status(task_id, sheets.STATUS_PENDING)
-            _send(rt, [
-                TextSendMessage(text=f"📝 已儲存 #{task_id}（長按可複製）：\n\n{text}"),
-                TextSendMessage(text=f"確認{task_id} ／ 直接編輯{task_id} 再改")
-            ])
+            task = sheets.get_task(task_id)
+            push_task_card(task, rt)
         else:
             handle_edit_reply(pending_val, text, rt)
     else:
-        _send(rt, TextSendMessage(
-            text="指令：\n進度 — 查看待審核任務\n歷史 — 近7天已完成\n確認{ID} / 修改{ID} {意見} / 略過{ID} / 全部略過"
-        ))
+        _send(rt, TextSendMessage(text="請直接使用下方按鈕操作。"))
 
 
 @handler.add(PostbackEvent)
@@ -568,6 +618,8 @@ def handle_postback(event):
         handle_direct_edit_request(data[12:], rt)
     elif data.startswith("generate_"):
         handle_generate(data[9:], rt)
+    elif data.startswith("close_"):
+        handle_close(data[6:], rt)
     elif data.startswith("view_"):
         task_id = data[5:]
         task = sheets.get_task(task_id)
@@ -610,10 +662,9 @@ def handle_edit_request(task_id: str, instruction: str, reply_token=None):
         new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=new_qa)
         sheets.update_full_draft(task_id, new_full, new_qa, new_full)
         sheets.update_status(task_id, sheets.STATUS_PENDING)
-        _send(reply_token, [
-            TextSendMessage(text=f"✏️ AI修改完成 #{task_id}（長按可複製）：\n\n{new_qa}"),
-            TextSendMessage(text=f"確認{task_id} ／ 修改{task_id} [繼續修改意見]")
-        ])
+        task.update({"草稿": new_full, "qa_content": new_qa,
+                     "full_reply": new_full, "狀態": sheets.STATUS_PENDING})
+        push_task_card(task, reply_token)
     else:
         _send(reply_token, TextSendMessage(text=f"請說明修改意見（任務 {task_id}），AI 會根據意見重寫："))
 
@@ -633,10 +684,9 @@ def handle_edit_reply(task_id: str, instruction: str, reply_token=None):
     new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=new_qa)
     sheets.update_full_draft(task_id, new_full, new_qa, new_full)
     sheets.update_status(task_id, sheets.STATUS_PENDING)
-    _send(reply_token, [
-        TextSendMessage(text=f"✏️ AI修改完成 #{task_id}（長按可複製）：\n\n{new_qa}"),
-        TextSendMessage(text=f"確認{task_id} ／ 修改{task_id} [繼續修改意見]")
-    ])
+    task.update({"草稿": new_full, "qa_content": new_qa,
+                 "full_reply": new_full, "狀態": sheets.STATUS_PENDING})
+    push_task_card(task, reply_token)
 
 
 def handle_direct_edit_request(task_id: str, reply_token=None):
@@ -662,17 +712,33 @@ def handle_skip_all(reply_token=None):
     _send(reply_token, TextSendMessage(text=f"⏭️ 已略過 {count} 筆任務"))
 
 
+def handle_close(task_id: str, reply_token=None):
+    task = sheets.get_task(task_id)
+    if not task:
+        _send(reply_token, TextSendMessage(text=f"❌ 找不到任務 {task_id}"))
+        return
+    if task.get("狀態") != sheets.STATUS_DONE:
+        _send(reply_token, TextSendMessage(
+            text=f"⚠️ 任務 {task_id} 尚未成功送出，不能結案。"
+        ))
+        return
+    sheets.update_status(task_id, sheets.STATUS_CLOSED)
+    _send(reply_token, TextSendMessage(text=f"✅ 任務 {task_id} 已確認無誤並結案。"))
+
+
 def handle_generate(task_id: str, reply_token=None):
     task = sheets.get_task(task_id)
     if not task:
         _send(reply_token, TextSendMessage(text=f"❌ 找不到任務 {task_id}"))
         return
-    _send(reply_token, TextSendMessage(text=f"🤖 正在生成草稿，請稍候..."))
     qa_content, full_reply = claude_helper.generate_draft(
         task["文章標題"], ""
     )
     sheets.update_full_draft(task_id, full_reply, qa_content, full_reply)
-    push_text(f"✅ 草稿生成完成 #{task_id}：\n\n{qa_content}\n\n確認{task_id} ／ 修改{task_id} [意見]")
+    sheets.update_status(task_id, sheets.STATUS_PENDING)
+    task.update({"草稿": full_reply, "qa_content": qa_content,
+                 "full_reply": full_reply, "狀態": sheets.STATUS_PENDING})
+    push_task_card(task, reply_token)
 
 
 # ===================================================
