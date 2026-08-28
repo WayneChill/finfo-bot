@@ -130,6 +130,16 @@ def get_approved_tasks() -> list:
     return [dict(r) for r in rows]
 
 
+def get_latest_editing_task() -> dict | None:
+    """Recover an interrupted LINE edit flow after a process restart."""
+    with _get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM tasks WHERE 狀態 = ? ORDER BY 建立時間 DESC LIMIT 1",
+            (STATUS_EDITING,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def add_example(category: str, question_summary: str, qa_content: str) -> int:
     with _get_conn() as conn:
         cur = conn.execute(

@@ -568,6 +568,23 @@ def handle_message(event):
                  "🗂️ 舊任務：查看超過 30 天的任務\n\n"
                  "在任務中按「查看」，即可檢查回覆、修改或結案。"
         ))
+    elif text == "全部略過":
+        handle_skip_all(rt)
+    elif pending_val := pending_edit.get(LINE_USER_ID):
+        if pending_val.startswith("direct:"):
+            task_id = pending_val[7:]
+            pending_edit.pop(LINE_USER_ID, None)
+            new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=text)
+            sheets.update_full_draft(task_id, new_full, text, new_full)
+            sheets.update_status(task_id, sheets.STATUS_PENDING)
+            task = sheets.get_task(task_id)
+            push_task_card(task, rt)
+        else:
+            handle_edit_reply(pending_val, text, rt)
+    elif editing_task := sheets.get_latest_editing_task():
+        # Railway may restart between the edit button and the user's next
+        # message. Recover the flow from SQLite instead of losing the input.
+        handle_edit_reply(editing_task["ID"], text, rt)
     elif text.startswith("查看"):
         task_id = text.replace("查看", "").strip()
         task = sheets.get_task(task_id)
@@ -580,23 +597,10 @@ def handle_message(event):
     elif text.startswith("修改"):
         parts = text.replace("修改", "").strip().split(" ", 1)
         handle_edit_request(parts[0], parts[1] if len(parts) > 1 else "", rt)
-    elif text == "全部略過":
-        handle_skip_all(rt)
     elif text.startswith("略過"):
         handle_skip(text.replace("略過", "").strip(), rt)
     elif text.startswith("結案"):
         handle_close(text.replace("結案", "").strip(), rt)
-    elif pending_val := pending_edit.get(LINE_USER_ID):
-        if pending_val.startswith("direct:"):
-            task_id = pending_val[7:]
-            pending_edit.pop(LINE_USER_ID, None)
-            new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=text)
-            sheets.update_full_draft(task_id, new_full, text, new_full)
-            sheets.update_status(task_id, sheets.STATUS_PENDING)
-            task = sheets.get_task(task_id)
-            push_task_card(task, rt)
-        else:
-            handle_edit_reply(pending_val, text, rt)
     else:
         _send(rt, TextSendMessage(text="請直接使用下方按鈕操作。"))
 
@@ -654,17 +658,7 @@ def handle_edit_request(task_id: str, instruction: str, reply_token=None):
     pending_edit[LINE_USER_ID] = task_id
     if instruction:
         pending_edit.pop(LINE_USER_ID, None)
-        new_qa = claude_helper.revise_draft(
-            original_draft=task.get("qa_content") or task.get("草稿", ""),
-            instruction=instruction,
-            post_title=task["文章標題"]
-        )
-        new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=new_qa)
-        sheets.update_full_draft(task_id, new_full, new_qa, new_full)
-        sheets.update_status(task_id, sheets.STATUS_PENDING)
-        task.update({"草稿": new_full, "qa_content": new_qa,
-                     "full_reply": new_full, "狀態": sheets.STATUS_PENDING})
-        push_task_card(task, reply_token)
+        _revise_and_show(task, instruction, reply_token)
     else:
         _send(reply_token, TextSendMessage(text=f"請說明修改意見（任務 {task_id}），AI 會根據意見重寫："))
 
@@ -674,19 +668,35 @@ def handle_edit_reply(task_id: str, instruction: str, reply_token=None):
     task = sheets.get_task(task_id)
     if not task:
         pending_edit.pop(LINE_USER_ID, None)
+        _send(reply_token, TextSendMessage(text=f"❌ 找不到任務 {task_id}"))
         return
     pending_edit.pop(LINE_USER_ID, None)
-    new_qa = claude_helper.revise_draft(
-        original_draft=task.get("qa_content") or task.get("草稿", ""),
-        instruction=instruction,
-        post_title=task["文章標題"]
-    )
-    new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=new_qa)
-    sheets.update_full_draft(task_id, new_full, new_qa, new_full)
-    sheets.update_status(task_id, sheets.STATUS_PENDING)
-    task.update({"草稿": new_full, "qa_content": new_qa,
-                 "full_reply": new_full, "狀態": sheets.STATUS_PENDING})
-    push_task_card(task, reply_token)
+    _revise_and_show(task, instruction, reply_token)
+
+
+def _revise_and_show(task: dict, instruction: str, reply_token=None):
+    """Run Claude revision and always give the user a visible result."""
+    task_id = task["ID"]
+    try:
+        new_qa = claude_helper.revise_draft(
+            original_draft=task.get("qa_content") or task.get("草稿", ""),
+            instruction=instruction,
+            post_title=task["文章標題"]
+        )
+        if not new_qa or new_qa.startswith("（草稿生成失敗"):
+            raise RuntimeError("Claude API 未產生有效內容")
+        new_full = claude_helper.REPLY_TEMPLATE.format(qa_content=new_qa)
+        sheets.update_full_draft(task_id, new_full, new_qa, new_full)
+        sheets.update_status(task_id, sheets.STATUS_PENDING)
+        task.update({"草稿": new_full, "qa_content": new_qa,
+                     "full_reply": new_full, "狀態": sheets.STATUS_PENDING})
+        push_task_card(task, reply_token)
+    except Exception as exc:
+        sheets.update_status(task_id, sheets.STATUS_PENDING)
+        print(f"AI revision failed task={task_id}: {exc}")
+        _send(reply_token, TextSendMessage(
+            text=f"❌ AI 修改失敗（任務 {task_id}），原內容沒有變更。請按查看後再試一次。"
+        ))
 
 
 def handle_direct_edit_request(task_id: str, reply_token=None):
